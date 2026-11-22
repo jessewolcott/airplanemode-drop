@@ -9,6 +9,7 @@ laptop sees them a few seconds later, whatever the operating system. Nothing lea
 <p align="center">
   <img src="docs/screenshots/drop.png" width="230" alt="Drop: send files and notes, folders on the box">
   <img src="docs/screenshots/folder.png" width="230" alt="A folder with downloads turned off by the admin, playing in Cinema">
+  <img src="docs/screenshots/wad.png" width="230" alt="A Doom WAD on the box, with Play in Doom">
 </p>
 
 <sub>Screenshots from the laptop dev stack; not yet tested on real hardware.</sub>
