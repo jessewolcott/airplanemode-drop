@@ -1,8 +1,17 @@
+<p align="center"><img src="docs/icon.svg" width="96" alt="Drop icon"></p>
+
 # Drop: pass files between every device on the hotspot
 
 An [AirplaneMode](https://github.com/jessewolcott/airplanemode) app. Anyone on your
 AirplaneMode hotspot can drop files and notes on the box, and every other phone, tablet and
 laptop sees them a few seconds later, whatever the operating system. Nothing leaves the box.
+
+<p align="center">
+  <img src="docs/screenshots/drop.png" width="230" alt="Drop: send files and notes, folders on the box">
+  <img src="docs/screenshots/folder.png" width="230" alt="A folder with downloads turned off by the admin, playing in Cinema">
+</p>
+
+<sub>Screenshots from the laptop dev stack; not yet tested on real hardware.</sub>
 
 - **Files:** choose or drag several at once, with a progress bar each. Photos show in the
   list, and video and audio play right in the page, with seeking (HTTP Range).
