@@ -24,6 +24,10 @@ laptop sees them a few seconds later, whatever the operating system. Nothing lea
   device can play the file), which opens the
   [Cinema](https://github.com/jessewolcott/airplanemode-cinema) app's full-screen player. Without
   Cinema (or with the admin's switch off), they play right in the list.
+- **Plays in Doom:** `.wad` files (your own `DOOM.WAD`, `DOOM2.WAD`, or mods) get a
+  **Play in Doom** button that opens them in the
+  [Doom](https://github.com/jessewolcott/airplanemode-doom) app, which also lists every WAD in
+  Drop on its start page.
 - **Downloads off (admin):** whoever is signed in to the AirplaneMode admin panel can turn
   downloads off for a file or a whole folder. Everyone can still play it on the box; nobody
   else gets a **save** button, and the server refuses to hand out a copy.
@@ -65,7 +69,8 @@ smaller of what's left of `DROP_MAX_BYTES` and the disk's free space minus 64 MB
 - **Client file names are never used as paths.** Files are stored by a random 16-hex-digit
   id, and the name is only metadata. Downloads send it as RFC 5987 `filename*`.
 - **Uploaded files can't run as pages on the box.** Only images (not SVG), audio, video and
-  plain text are shown inline. Everything else downloads as `application/octet-stream`, and
+  plain text are shown inline (plus Doom WADs, under a type browsers can't render, so the Doom
+  app can read them). Everything else downloads as `application/octet-stream`, and
   every file response has `X-Content-Type-Options: nosniff` and a `sandbox` CSP. This matters
   because Drop shares an address with the box's admin panel.
 - **The page refreshes the list every 4 seconds** but only rebuilds what changed, so a video
