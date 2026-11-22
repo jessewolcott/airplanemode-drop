@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Drop · AirplaneMode</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%235fb8c9'/%3E%3Cpath d='M8 3v7M5 7l3 3 3-3M4 13h8' stroke='%2306181c' stroke-width='1.6' fill='none'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0d0f12; --panel: #14171c; --panel2: #1a1e24; --line: #252a32; --line2: #333a44;
+    --ink: #e4dfd3; --dim: #8f8c84; --accent: #5fb8c9; --amber: #f2b34b; --good: #7bc47f; --bad: #e07a6a;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); }
+  main { max-width: 880px; margin: 0 auto; padding: 22px 16px 60px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  h1 { font-size: 1.35rem; margin: 0; } h1 span { color: var(--accent); }
+  a.home { color: var(--dim); font: .8rem var(--mono); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  a.home:hover { color: var(--ink); border-color: var(--dim); }
+  .lead { color: var(--dim); margin: -8px 0 16px; font-size: .92rem; }
+
+  .send { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .send { grid-template-columns: 1fr 1fr; } }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center;
+          min-height: 140px; border: 1.5px dashed var(--line2); cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop.over { border-color: var(--accent); background: #13262a; }
+  .drop b { font-size: 1.05rem; } .drop small { color: var(--dim); }
+  .drop input { display: none; }
+  textarea { width: 100%; min-height: 92px; resize: vertical; font: .95rem var(--sans); color: var(--ink); background: var(--bg);
+             border: 1px solid var(--line2); border-radius: 7px; padding: 9px 11px; }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  .btn { font: 600 .9rem var(--sans); padding: 9px 14px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel2); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #06181c; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 10px; flex-wrap: wrap; }
+  .msg { font-size: .85rem; color: var(--bad); min-height: 1.2em; }
+
+  .uploads { margin-top: 12px; display: grid; gap: 8px; }
+  .up { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: .88rem; }
+  .up .top { display: flex; justify-content: space-between; gap: 10px; }
+  .up .top span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .up .top span:last-child { color: var(--dim); font-family: var(--mono); font-size: .78rem; white-space: nowrap; }
+  .bar { height: 5px; background: var(--line); border-radius: 3px; margin-top: 7px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .up.err { border-color: #5a2f2a; } .up.err .bar i { background: var(--bad); }
+  .up button { background: none; border: 0; color: var(--dim); cursor: pointer; font: .78rem var(--mono); padding: 0 0 0 8px; }
+
+  h2.section { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font: 500 .75rem var(--mono); letter-spacing: .14em;
+               text-transform: uppercase; color: var(--dim); margin: 28px 0 10px; }
+  h2.section small { letter-spacing: 0; text-transform: none; font-size: .78rem; }
+  .space { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: -4px 0 14px; }
+  .space i { display: block; height: 100%; background: var(--dim); }
+
+  .items { display: grid; gap: 10px; }
+  .item { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+  .item.pinned { border-color: #3d5b61; }
+  .item .head { display: flex; gap: 12px; align-items: center; min-width: 0; }
+  .item .icon { width: 44px; height: 44px; border-radius: 9px; background: var(--panel2); display: grid; place-items: center;
+                font: 700 .72rem var(--mono); color: var(--dim); flex: none; overflow: hidden; }
+  .item .what { min-width: 0; flex: 1; }
+  .item .what b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .what small { color: var(--dim); font-size: .8rem; }
+  .item .acts { display: flex; gap: 6px; flex: none; }
+  .item .acts a, .item .acts button { font: .76rem var(--mono); color: var(--dim); background: none; border: 1px solid var(--line); border-radius: 6px;
+                                       padding: 5px 9px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .item .acts a:hover, .item .acts button:hover { color: var(--ink); border-color: var(--dim); }
+  .item .acts button.on { color: var(--accent); border-color: #3d5b61; }
+  .item .acts button.del:hover { color: var(--bad); border-color: #5a2f2a; }
+  .item img.preview { max-width: 100%; max-height: 360px; border-radius: 7px; display: block; background: var(--panel2); }
+  .item video { width: 100%; max-height: 420px; border-radius: 7px; background: #000; }
+  .item audio { width: 100%; }
+  .item pre { margin: 0; padding: 10px 12px; background: var(--bg); border-radius: 7px; white-space: pre-wrap; word-break: break-word;
+              font: .9rem/1.45 var(--sans); max-height: 240px; overflow: auto; }
+  .item pre a { color: var(--accent); }
+  .empty { color: var(--dim); }
+  footer { margin-top: 36px; color: var(--dim); font: .75rem var(--mono); }
+  @media (max-width: 520px) { .item .head { flex-wrap: wrap; } .item .acts { width: 100%; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Dr<span>o</span>p</h1>
+    <a class="home" href="../">AirplaneMode</a>
+  </header>
+  <p class="lead">Send files and notes to every device on this hotspot. Nothing leaves the box.</p>
+
+  <section class="send">
+    <label class="box drop" id="drop">
+      <input type="file" id="files" multiple>
+      <b>Choose files to send</b>
+      <small id="limits">or drop them here</small>
+    </label>
+    <form class="box" id="textForm">
+      <textarea id="text" placeholder="Paste a link, an address, a booking code…" maxlength="65536"></textarea>
+      <div class="row"><span class="msg" id="textMsg"></span><button class="btn primary" id="textBtn">Share text</button></div>
+    </form>
+  </section>
+  <div class="uploads" id="uploads"></div>
+
+  <h2 class="section"><span>On the box</span><small id="usage"></small></h2>
+  <div class="space"><i id="spaceBar"></i></div>
+  <div class="items" id="items"><p class="empty">Loading…</p></div>
+
+  <footer id="foot">Anyone on this hotspot can see, download and delete what's here.</footer>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const H = { "X-Drop": "1" };
+let info = null, version = -1;
+
+function size(n) {
+  if (n < 1024) return n + " bytes";
+  const u = ["KB", "MB", "GB", "TB"]; let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return n.toFixed(n < 10 ? 1 : 0) + " " + u[i];
+}
+function age(t) {
+  const s = Date.now() / 1000 - t;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  return Math.floor(s / 86400) + " d ago";
+}
+function kindOf(it) {
+  if (it.kind === "text") return "text";
+  const t = it.type || "";
+  if (/^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(t)) return "image";
+  if (t.startsWith("video/")) return "video";
+  if (t.startsWith("audio/")) return "audio";
+  return "file";
+}
+function ext(name) { const m = /\.([a-z0-9]{1,5})$/i.exec(name); return m ? m[1].toUpperCase() : "FILE"; }
+function linkify(text) {
+  return esc(text).replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)"'\]]/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+}
+function left(it) {
+  if (it.pinned) return "kept";
+  const d = info.keep_days - (Date.now() / 1000 - it.created) / 86400;
+  return d < 1 ? "goes in < 1 day" : `goes in ${Math.ceil(d)} d`;
+}
+
+// ---- list: keyed by id, so a playing video isn't rebuilt by the refresh ----
+function itemNode(it) {
+  const k = kindOf(it), url = "api/files/" + it.id;
+  const el = document.createElement("article");
+  el.className = "item"; el.dataset.id = it.id;
+  const icon = k === "text" ? "TXT" : esc(ext(it.name));
+  const dl = it.kind === "file" ? `<a href="${url}?dl=1" download>save</a>` : `<button type="button" data-copy>copy</button>`;
+  el.innerHTML = `
+    <div class="head">
+      <span class="icon">${icon}</span>
+      <span class="what"><b></b><small></small></span>
+      <span class="acts">${dl}<button type="button" data-pin></button><button type="button" class="del" data-del>delete</button></span>
+    </div>
+    ${k === "text" ? `<pre>${linkify(it.text)}</pre>`
+      : k === "image" ? `<a href="${url}" target="_blank"><img class="preview" src="${url}" alt="${esc(it.name)}" loading="lazy"></a>`
+      : k === "video" ? `<video controls preload="metadata" playsinline src="${url}"></video>`
+      : k === "audio" ? `<audio controls preload="none" src="${url}"></audio>` : ""}`;
+  el.querySelector(".what b").textContent = it.kind === "text" ? it.name : it.name;
+  el.querySelector(".what b").title = it.name;
+  return el;
+}
+function updateNode(el, it) {
+  el.classList.toggle("pinned", !!it.pinned);
+  el.querySelector(".what small").textContent = (it.kind === "text" ? "text" : size(it.size)) + " · " + age(it.created) + " · " + left(it);
+  const p = el.querySelector("[data-pin]");
+  p.textContent = it.pinned ? "kept" : "keep"; p.classList.toggle("on", !!it.pinned);
+  p.title = it.pinned ? "Kept until someone deletes it. Tap to let it expire." : `Keep past ${info.keep_days} days`;
+}
+function render() {
+  const box = $("#items"), have = new Map([...box.querySelectorAll(".item")].map(e => [e.dataset.id, e]));
+  const items = info.items;
+  if (!items.length) { box.innerHTML = '<p class="empty">Nothing here yet. Send something from any device on the hotspot.</p>'; }
+  else {
+    box.querySelector(".empty")?.remove();
+    items.forEach((it, i) => {
+      const el = have.get(it.id) || itemNode(it);
+      have.delete(it.id);
+      updateNode(el, it);
+      if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null);
+    });
+    have.forEach(el => el.remove());
+  }
+  const pct = Math.min(100, 100 * info.used / info.cap);
+  $("#spaceBar").style.width = pct + "%";
+  $("#usage").textContent = `${size(info.used)} used · ${size(info.free)} free`;
+  $("#limits").textContent = `or drop them here · up to ${size(info.max_file)} each`;
+  $("#foot").textContent = `Anyone on this hotspot can see, download and delete what's here. Items go after ${info.keep_days} days unless kept.`;
+}
+async function refresh() {
+  try {
+    const d = await (await fetch("api/items", { cache: "no-store" })).json();
+    const changed = d.version !== version; version = d.version; info = d;
+    if (changed) render();
+    else document.querySelectorAll(".item").forEach(el => { const it = info.items.find(i => i.id === el.dataset.id); if (it) updateNode(el, it); });
+  } catch { /* box restarting: try again next time */ }
+}
+
+$("#items").addEventListener("click", async e => {
+  const el = e.target.closest(".item"); if (!el) return;
+  const it = info.items.find(i => i.id === el.dataset.id); if (!it) return;
+  if (e.target.closest("[data-del]")) {
+    if (!confirm(`Delete "${it.name}" for everyone?`)) return;
+    await fetch("api/items/" + it.id, { method: "DELETE", headers: H });
+  } else if (e.target.closest("[data-pin]")) {
+    await fetch(`api/items/${it.id}/pin`, { method: "POST", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ pinned: !it.pinned }) });
+  } else if (e.target.closest("[data-copy]")) {
+    const b = e.target.closest("[data-copy]");
+    try { await navigator.clipboard.writeText(it.text); b.textContent = "copied"; }
+    catch { const r = document.createRange(); r.selectNodeContents(el.querySelector("pre")); getSelection().removeAllRanges(); getSelection().addRange(r); b.textContent = "selected"; }
+    setTimeout(() => b.textContent = "copy", 1500);
+    return;
+  } else return;
+  refresh();
+});
+
+// ---- sending ----
+$("#textForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const text = $("#text").value.trim(); if (!text) return;
+  $("#textBtn").disabled = true; $("#textMsg").textContent = "";
+  try {
+    const r = await fetch("api/texts", { method: "POST", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+    $("#text").value = ""; refresh();
+  } catch (err) { $("#textMsg").textContent = err.message; }
+  finally { $("#textBtn").disabled = false; }
+});
+
+const queue = []; let sending = false;
+function addFiles(list) {
+  for (const f of list) {
+    const row = document.createElement("div");
+    row.className = "up";
+    row.innerHTML = `<div class="top"><span></span><span>waiting <button type="button">cancel</button></span></div><div class="bar"><i></i></div>`;
+    row.querySelector(".top span").textContent = f.name;
+    $("#uploads").append(row);
+    const job = { f, row, xhr: null, cancelled: false };
+    row.querySelector("button").onclick = () => { job.cancelled = true; job.xhr?.abort(); row.remove(); };
+    if (info && f.size > info.max_file) { fail(job, `too big: the limit is ${size(info.max_file)}`); continue; }
+    queue.push(job);
+  }
+  pump();
+}
+function fail(job, text) {
+  job.row.classList.add("err");
+  job.row.querySelector(".top span:last-child").textContent = text;
+  job.row.querySelector(".bar i").style.width = "100%";
+  setTimeout(() => job.row.remove(), 8000);
+}
+async function pump() {
+  if (sending) return; sending = true;
+  while (queue.length) {
+    const job = queue.shift(); if (job.cancelled) continue;
+    await new Promise(done => {
+      const x = job.xhr = new XMLHttpRequest(), stat = job.row.querySelector(".top span:last-child");
+      const btn = stat.querySelector("button");
+      x.open("PUT", "api/files?name=" + encodeURIComponent(job.f.name));
+      x.setRequestHeader("X-Drop", "1");
+      x.upload.onprogress = e => {
+        if (!e.lengthComputable) return;
+        job.row.querySelector(".bar i").style.width = (100 * e.loaded / e.total) + "%";
+        stat.firstChild.textContent = `${Math.floor(100 * e.loaded / e.total)}% of ${size(e.total)} `;
+      };
+      x.onload = () => {
+        if (x.status === 200) { job.row.remove(); refresh(); }
+        else { let d = ""; try { d = JSON.parse(x.responseText).detail; } catch {} fail(job, d || `failed (${x.status})`); }
+        done();
+      };
+      x.onerror = () => { fail(job, "connection lost: try again"); done(); };
+      x.onabort = () => done();
+      stat.firstChild.textContent = "starting ";
+      if (btn) btn.onclick = () => { job.cancelled = true; x.abort(); job.row.remove(); };
+      x.send(job.f);
+    });
+  }
+  sending = false;
+}
+$("#files").addEventListener("change", e => { addFiles(e.target.files); e.target.value = ""; });
+const drop = $("#drop");
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
+window.addEventListener("beforeunload", e => { if (sending) { e.preventDefault(); e.returnValue = ""; } });
+
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>

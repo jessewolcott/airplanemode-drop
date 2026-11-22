@@ -1,0 +1,210 @@
+"""Drop API tests.  Run: python tests/test_drop.py"""
+import os
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+os.environ.update(DATA_DIR=tempfile.mkdtemp(prefix="drop-test-"), DROP_MAX_BYTES="1m",
+                  DROP_MAX_FILE="600k", DROP_KEEP_DAYS="7")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import app as drop  # noqa: E402
+
+H = {"X-Drop": "1"}
+K = 1024
+
+
+def ok(r, code=200):
+    assert r.status_code == code, (r.status_code, r.text)
+    return r.json()
+
+
+def reset():
+    for i in list(drop.store.items):
+        c.delete(f"/api/items/{i['id']}", headers=H)
+    assert drop.store.items == []
+
+
+def put(name, data, headers=H):
+    return c.put("/api/files", params={"name": name}, content=data, headers=headers)
+
+
+def test_sizes():
+    assert drop.parse_size("4g", "1") == 4 * K ** 3
+    assert drop.parse_size("512K", "1") == 512 * K
+    assert drop.parse_size("1.5m", "1") == int(1.5 * K * K)
+    assert drop.parse_size("", "2g") == 2 * K ** 3
+    assert drop.parse_size("100", "1") == 100
+
+
+def test_page_uses_relative_urls():
+    html = c.get("/").text
+    assert 'fetch("api/items"' in html and '"/api/' not in html
+    # nothing loaded from outside the box: no external or root-relative src/href
+    assert not re.search(r'(src|href)="(https?:|//|/[^/])', html), re.findall(r'(?:src|href)="[^"]*"', html)
+
+
+def test_round_trip():
+    reset()
+    data = os.urandom(300 * K)
+    it = ok(put("holiday photo.jpg", data))
+    assert it["name"] == "holiday photo.jpg" and it["size"] == len(data) and it["type"] == "image/jpeg"
+    r = c.get(f"/api/files/{it['id']}")
+    assert r.status_code == 200 and r.content == data
+    assert r.headers["accept-ranges"] == "bytes" and r.headers["content-type"] == "image/jpeg"
+    assert r.headers["content-disposition"].startswith("inline")
+    assert c.get(f"/api/files/{it['id']}", params={"dl": 1}).headers["content-disposition"].startswith("attachment")
+    lst = ok(c.get("/api/items"))
+    assert [i["id"] for i in lst["items"]] == [it["id"]] and lst["used"] == len(data)
+    assert lst["free"] == 1 * K * K - len(data)
+    # nothing left behind in tmp
+    assert list(drop.TMP.iterdir()) == []
+
+
+def test_dangerous_types_download_as_attachments():
+    reset()
+    for name in ["page.html", "logo.svg", "x.js"]:
+        it = ok(put(name, b"<script>alert(1)</script>"))
+        r = c.get(f"/api/files/{it['id']}")
+        assert r.headers["content-type"] == "application/octet-stream", (name, r.headers)
+        assert r.headers["content-disposition"].startswith("attachment")
+        assert r.headers["x-content-type-options"] == "nosniff" and "sandbox" in r.headers["content-security-policy"]
+
+
+def test_range():
+    reset()
+    data = bytes(range(256)) * 400  # 102400 bytes
+    iid = ok(put("clip.mp4", data))["id"]
+    r = c.get(f"/api/files/{iid}", headers={"Range": "bytes=100-199"})
+    assert r.status_code == 206 and r.content == data[100:200], r.status_code
+    assert r.headers["content-range"] == f"bytes 100-199/{len(data)}" and r.headers["content-length"] == "100"
+    r = c.get(f"/api/files/{iid}", headers={"Range": "bytes=0-1"})        # what iOS Safari asks first
+    assert r.status_code == 206 and r.content == data[:2]
+    r = c.get(f"/api/files/{iid}", headers={"Range": "bytes=102000-"})
+    assert r.status_code == 206 and r.content == data[102000:]
+    r = c.get(f"/api/files/{iid}", headers={"Range": "bytes=-10"})
+    assert r.status_code == 206 and r.content == data[-10:]
+    r = c.get(f"/api/files/{iid}", headers={"Range": "bytes=0-999999999"})  # end clamped
+    assert r.status_code == 206 and r.content == data
+    r = c.get(f"/api/files/{iid}", headers={"Range": "bytes=999999-"})
+    assert r.status_code == 416 and r.headers["content-range"] == f"bytes */{len(data)}"
+    r = c.head(f"/api/files/{iid}")
+    assert r.status_code == 200 and r.headers["content-length"] == str(len(data)) and r.content == b""
+
+
+def test_per_file_cap():
+    reset()
+    r = put("big.bin", b"x" * (601 * K))
+    assert r.status_code == 413 and "limit per file" in r.json()["detail"], r.text
+    assert ok(c.get("/api/items"))["items"] == []
+
+
+def test_total_cap():
+    reset()
+    ok(put("a.bin", b"a" * (500 * K)))
+    ok(put("b.bin", b"b" * (400 * K)))
+    r = put("c.bin", b"c" * (200 * K))
+    assert r.status_code == 413 and "Not enough space" in r.json()["detail"], r.text
+    assert len(ok(c.get("/api/items"))["items"]) == 2
+
+
+def test_streaming_cap_without_length():
+    """No Content-Length (chunked upload): the limits are enforced while the data arrives."""
+    reset()
+
+    def chunks(total):
+        sent = 0
+        while sent < total:
+            yield b"z" * (64 * K)
+            sent += 64 * K
+
+    r = c.put("/api/files", params={"name": "stream.bin"}, content=chunks(700 * K), headers=H)
+    assert r.status_code == 413, r.text
+    assert ok(c.get("/api/items"))["items"] == [] and list(drop.TMP.iterdir()) == []
+    assert drop.store.reserved == {}
+    ok(put("fill.bin", b"f" * (500 * K)))
+    r = c.put("/api/files", params={"name": "stream2.bin"}, content=chunks(576 * K), headers=H)
+    assert r.status_code == 413 and "space" in r.json()["detail"], r.text
+    r = c.put("/api/files", params={"name": "small.bin"}, content=chunks(128 * K), headers=H)
+    assert ok(r)["size"] == 128 * K
+
+
+def test_names_are_never_paths():
+    reset()
+    for evil, shown in [("../../etc/passwd", "passwd"), ("..\\..\\boot.ini", "boot.ini"), ("..", "file"),
+                        ("a\x00b\nc.txt", "abc.txt"), ("", "file"), ("/", "file")]:
+        it = ok(put(evil, b"hello"))
+        assert it["name"] == shown, (evil, it["name"])
+        assert drop.ID_RE.match(it["id"])
+    stored = sorted(p.name for p in drop.FILES.iterdir())
+    assert all(drop.ID_RE.match(n) for n in stored), stored
+    assert not (drop.DATA.parent / "passwd").exists()
+    # ids that aren't ours never reach the filesystem
+    for bad in ["..%2f..%2fitems.json", "items.json", "0123", "ZZZZZZZZZZZZZZZZ"]:
+        assert c.get(f"/api/files/{bad}").status_code == 404, bad
+    # unicode names survive in Content-Disposition (RFC 5987)
+    it = ok(put("Bordkarte München \"1\".pdf", b"%PDF"))
+    cd = c.get(f"/api/files/{it['id']}").headers["content-disposition"]
+    assert cd.startswith('attachment; filename="Bordkarte M_nchen _1_.pdf"'), cd
+    assert "filename*=UTF-8''Bordkarte%20M%C3%BCnchen%20%221%22.pdf" in cd, cd
+
+
+def test_text_items():
+    reset()
+    it = ok(c.post("/api/texts", json={"text": "  Gate B12\nhttps://example.com/boarding  "}, headers=H))
+    assert it["kind"] == "text" and it["name"] == "Gate B12" and it["text"].endswith("boarding")
+    assert c.get(f"/api/files/{it['id']}").status_code == 404
+    assert c.post("/api/texts", json={"text": "   "}, headers=H).status_code == 400
+    assert c.post("/api/texts", json={"text": "x" * (64 * K + 1)}, headers=H).status_code == 413
+    assert ok(c.get("/api/items"))["used"] == 0  # text doesn't count against file space
+
+
+def test_expiry_and_pin():
+    reset()
+    a = ok(put("old.txt", b"old"))
+    b = ok(put("kept.txt", b"kept"))
+    t = ok(c.post("/api/texts", json={"text": "old note"}, headers=H))
+    ok(c.post(f"/api/items/{b['id']}/pin", json={"pinned": True}, headers=H))
+    for i in drop.store.items:
+        i["created"] -= 8 * 86400
+    ids = [i["id"] for i in ok(c.get("/api/items"))["items"]]
+    assert ids == [b["id"]], ids
+    assert not (drop.FILES / a["id"]).exists() and (drop.FILES / b["id"]).exists()
+    assert t["id"] not in ids
+    ok(c.post(f"/api/items/{b['id']}/pin", json={"pinned": False}, headers=H))
+    assert ok(c.get("/api/items"))["items"] == []
+
+
+def test_delete_and_header():
+    reset()
+    it = ok(put("x.txt", b"x"))
+    assert put("y.txt", b"y", headers={}).status_code == 403          # no header: refused
+    assert c.delete(f"/api/items/{it['id']}").status_code == 403
+    assert c.post("/api/texts", json={"text": "hi"}).status_code == 403
+    v = ok(c.get("/api/items"))["version"]
+    ok(c.delete(f"/api/items/{it['id']}", headers=H))
+    assert not (drop.FILES / it["id"]).exists()
+    after = ok(c.get("/api/items"))
+    assert after["items"] == [] and after["version"] > v
+    assert c.delete(f"/api/items/{it['id']}", headers=H).status_code == 404
+
+
+def test_restart_keeps_items_and_cleans_up():
+    reset()
+    it = ok(put("stays.txt", b"stays"))
+    (drop.TMP / "dead.part").write_bytes(b"half")       # upload cut off by a restart
+    (drop.FILES / "0123456789abcdef").write_bytes(b"?")  # file with no metadata
+    drop.store.load()
+    assert [i["id"] for i in drop.store.items] == [it["id"]]
+    assert list(drop.TMP.iterdir()) == [] and not (drop.FILES / "0123456789abcdef").exists()
+
+
+if __name__ == "__main__":
+    with TestClient(drop.app) as c:
+        for name, fn in list(globals().items()):
+            if name.startswith("test_"):
+                fn()
+                print("ok  ", name)

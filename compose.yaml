@@ -1,0 +1,21 @@
+# Standalone development: Drop on its own, without the rest of AirplaneMode.
+#   docker compose up -d --build      ->  http://localhost:8766
+# On the box, Drop runs from the airplanemode platform repo at /drop/.
+
+name: drop-dev
+
+services:
+  drop:
+    build: .
+    environment:
+      DROP_MAX_BYTES: ${DROP_MAX_BYTES:-4g}
+      DROP_MAX_FILE: ${DROP_MAX_FILE:-2g}
+      DROP_KEEP_DAYS: ${DROP_KEEP_DAYS:-7}
+    volumes:
+      - drop-data:/data
+    ports:
+      - "${PORT:-8766}:8000"
+    mem_limit: 128m
+
+volumes:
+  drop-data:

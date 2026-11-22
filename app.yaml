@@ -1,0 +1,15 @@
+# AirplaneMode app manifest. See the platform repo: docs/app-contract.md
+id: drop
+name: Drop
+description: Send files and notes between every phone, tablet and laptop on the hotspot, and keep movies for the flight.
+image: ghcr.io/jessewolcott/airplanemode-drop
+port: 8000
+path: /drop/
+memory: 128m          # uploads and downloads are streamed; the app never holds a file in memory
+volume: /data         # the files themselves plus items.json
+needs:
+  llm: none
+env:
+  DROP_MAX_BYTES: Space Drop may use in total (default 4g; k/m/g suffixes).
+  DROP_MAX_FILE: Largest single file (default 2g).
+  DROP_KEEP_DAYS: Days before an item is deleted unless someone taps "keep" (default 7).
