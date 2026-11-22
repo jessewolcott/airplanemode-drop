@@ -202,6 +202,131 @@ def test_restart_keeps_items_and_cleans_up():
     assert list(drop.TMP.iterdir()) == [] and not (drop.FILES / "0123456789abcdef").exists()
 
 
+def folder(name, parent=None):
+    return ok(c.post("/api/folders", json={"name": name, "parent": parent}, headers=H))
+
+
+def patch(iid, **body):
+    return c.patch(f"/api/items/{iid}", json=body, headers=H)
+
+
+def test_folders_move_and_delete():
+    reset()
+    movies = folder("Movies")
+    kids = folder("Kids", movies["id"])
+    film = ok(c.put("/api/files", params={"name": "film.mp4", "parent": kids["id"]}, content=b"m" * 100, headers=H))
+    assert film["parent"] == kids["id"]
+    note = ok(c.post("/api/texts", json={"text": "popcorn", "parent": movies["id"]}, headers=H))
+    assert note["parent"] == movies["id"]
+    # a file is not a folder; unknown folders are refused before the upload is read
+    assert c.put("/api/files", params={"name": "x", "parent": film["id"]}, content=b"x", headers=H).status_code == 400
+    assert c.put("/api/files", params={"name": "x", "parent": "0123456789abcdef"}, content=b"x", headers=H).status_code == 404
+    # move to the top and back; rename
+    assert ok(patch(film["id"], parent="root"))["parent"] is None
+    assert ok(patch(film["id"], parent=kids["id"], name="Film night.mp4"))["name"] == "Film night.mp4"
+    # a folder can't go inside itself or its own subfolder
+    assert patch(movies["id"], parent=movies["id"]).status_code == 400
+    assert patch(movies["id"], parent=kids["id"]).status_code == 400
+    # depth limit
+    f = movies
+    for n in range(drop.MAX_DEPTH - 1):
+        f = folder(f"d{n}", f["id"])
+    assert c.post("/api/folders", json={"name": "too deep", "parent": f["id"]}, headers=H).status_code == 400
+    # deleting a folder deletes everything in it, files included
+    r = ok(c.delete(f"/api/items/{movies['id']}", headers=H))
+    assert r["deleted"] == 4 + drop.MAX_DEPTH - 1, r   # Movies, Kids, the film, the note + the deep chain
+    assert drop.store.items == [] and not (drop.FILES / film["id"]).exists()
+
+
+def test_keep_on_a_folder_keeps_whats_inside():
+    reset()
+    box = folder("Flight")
+    inside = ok(c.put("/api/files", params={"name": "a.mp3", "parent": box["id"]}, content=b"a", headers=H))
+    outside = ok(put("b.mp3", b"b"))
+    ok(c.post(f"/api/items/{box['id']}/pin", json={"pinned": True}, headers=H))
+    for i in drop.store.items:
+        i["created"] -= 30 * 86400
+    ids = {i["id"]: i for i in ok(c.get("/api/items"))["items"]}
+    assert set(ids) == {box["id"], inside["id"]}, ids  # folder never expires; the file is kept by it
+    assert ids[inside["id"]]["kept"] and not ids[inside["id"]]["pinned"]
+    assert outside["id"] not in ids
+
+
+def test_downloads_off_admin_only_and_inherited():
+    reset()
+    admins = {"a" * 32}
+    drop.ADMIN_URL, drop.check_admin_token = "http://admin.test", lambda t: t in admins
+    drop._admin_cache.clear()
+    try:
+        movies = folder("Movies")
+        film = ok(c.put("/api/files", params={"name": "film.mp4", "parent": movies["id"]}, content=b"v" * 1000, headers=H))
+        zipf = ok(c.put("/api/files", params={"name": "extras.zip", "parent": movies["id"]}, content=b"z" * 10, headers=H))
+        # not signed in, or a wrong/odd cookie: refused
+        assert patch(movies["id"], nodownload=True).status_code == 403
+        c.cookies.set("am_admin", "b" * 32)
+        assert patch(movies["id"], nodownload=True).status_code == 403
+        c.cookies.set("am_admin", "bad token; x=1")
+        assert patch(movies["id"], nodownload=True).status_code == 403
+        assert not ok(c.get("/api/items"))["admin"]
+        # the admin turns downloads off for the folder
+        c.cookies.set("am_admin", "a" * 32)
+        lst = ok(c.get("/api/items"))
+        assert lst["admin"] and lst["admin_available"]
+        ok(patch(movies["id"], nodownload=True))
+        c.cookies.clear()
+        items = {i["id"]: i for i in ok(c.get("/api/items"))["items"]}
+        assert not items[film["id"]]["download"] and items[film["id"]]["blocked_by"] == movies["id"]
+        assert not items[movies["id"]]["download"] and items[movies["id"]]["blocked_by"] is None
+        # everyone else: streaming works (with seeking), saving a copy doesn't
+        r = c.get(f"/api/files/{film['id']}", headers={"Range": "bytes=0-99"})
+        assert r.status_code == 206 and r.content == b"v" * 100
+        assert c.get(f"/api/files/{film['id']}", params={"dl": 1}).status_code == 403
+        assert c.get(f"/api/files/{zipf['id']}").status_code == 403      # attachment-only type
+        # moving a file out of the folder makes it downloadable again; in again, blocked
+        ok(patch(film["id"], parent="root"))
+        assert c.get(f"/api/files/{film['id']}", params={"dl": 1}).status_code == 200
+        ok(patch(film["id"], parent=movies["id"]))
+        # the admin can still save it
+        c.cookies.set("am_admin", "a" * 32)
+        assert c.get(f"/api/files/{film['id']}", params={"dl": 1}).status_code == 200
+        ok(patch(movies["id"], nodownload=False))
+        c.cookies.clear()
+        assert c.get(f"/api/files/{zipf['id']}").status_code == 200
+        # the answer is cached, so the admin service isn't asked on every request
+        calls = []
+        drop.check_admin_token = lambda t: calls.append(t) or True
+        drop._admin_cache.clear()
+        c.cookies.set("am_admin", "c" * 32)
+        for _ in range(3):
+            c.get("/api/items")
+        assert len(calls) == 1
+    finally:
+        c.cookies.clear()
+        drop.ADMIN_URL, drop.check_admin_token = "", drop._ask_admin_service
+        drop._admin_cache.clear()
+
+
+def test_standalone_has_no_admin():
+    reset()
+    it = ok(put("x.mp4", b"x"))
+    c.cookies.set("am_admin", "a" * 32)
+    try:
+        assert not ok(c.get("/api/items"))["admin_available"]
+        assert patch(it["id"], nodownload=True).status_code == 403
+    finally:
+        c.cookies.clear()
+
+
+def test_old_items_get_folder_fields():
+    reset()
+    it = ok(put("old.txt", b"old"))
+    raw = drop.META.read_text(encoding="utf-8").replace('"nodownload": false', '"zz": 0').replace('"parent": null', '"parent": "feedfeedfeedfeed"')
+    drop.META.write_text(raw, encoding="utf-8")
+    drop.store.load()
+    got = drop.store.get(it["id"])
+    assert got["parent"] is None and got["nodownload"] is False
+
+
 if __name__ == "__main__":
     with TestClient(drop.app) as c:
         for name, fn in list(globals().items()):

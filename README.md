@@ -7,8 +7,17 @@ laptop sees them a few seconds later, whatever the operating system. Nothing lea
 - **Files:** choose or drag several at once, with a progress bar each. Photos show in the
   list, and video and audio play right in the page, with seeking (HTTP Range).
 - **Text:** paste a link, an address or a booking code; others tap **copy**.
+- **Folders:** make folders (and folders inside them), send files straight into the one
+  you're in, and **move** things between them. **Keep** on a folder keeps everything in it.
 - **For the flight:** load movies and music before you leave, tap **keep**, and they stay.
   Everything else goes after 7 days.
+- **Plays in Cinema:** on the box, videos and music get a **Play in Cinema** button (when this
+  device can play the file), which opens the
+  [Cinema](https://github.com/jessewolcott/airplanemode-cinema) app's full-screen player. Without
+  Cinema (or with the admin's switch off), they play right in the list.
+- **Downloads off (admin):** whoever is signed in to the AirplaneMode admin panel can turn
+  downloads off for a file or a whole folder. Everyone can still play it on the box; nobody
+  else gets a **save** button, and the server refuses to hand out a copy.
 
 ## Running it
 
@@ -30,6 +39,7 @@ Use another port with `PORT=9000`.
 | `DROP_MAX_BYTES` | `4g` | total space Drop may use (`k`/`m`/`g` suffixes) |
 | `DROP_MAX_FILE` | `2g` | largest single file |
 | `DROP_KEEP_DAYS` | `7` | days before an item is deleted, unless someone tapped **keep** |
+| `ADMIN_URL` | *(empty)* | the platform's admin service (`http://admin:8000` on the box), to recognise the admin. Empty: nobody is admin |
 
 Files and `items.json` live in one volume at `/data`. Free space shown in the page is the
 smaller of what's left of `DROP_MAX_BYTES` and the disk's free space minus 64 MB.
@@ -54,8 +64,16 @@ smaller of what's left of `DROP_MAX_BYTES` and the disk's free space minus 64 MB
 
 ## Who can do what
 
-There's no login. **Anyone on the hotspot can see, download, keep and delete everything**,
-so the hotspot password is the access control. Changes need an `X-Drop: 1` header, which
+There's no login. **Anyone on the hotspot can see, keep, move and delete everything**, and
+download anything the admin hasn't turned downloads off for, so the hotspot password is the
+access control.
+
+**The admin** is whoever is signed in to the AirplaneMode admin panel. Drop is served from the
+same address, so the browser sends it the panel's session cookie; Drop asks the admin service
+(`GET /api/admin/session`) whether it's valid and remembers the answer for 30 seconds. Only the
+admin can turn downloads on or off. "Downloads off" refuses `?dl=1` and attachment-only types
+for everyone else, while streaming (with seeking) keep working, so films still play. It stops
+casual copies filling up phones; it can't stop someone recording what's playing. Changes need an `X-Drop: 1` header, which
 other websites can't send without a CORS preflight that Drop never allows, so a web page
 open on a phone can't add or delete items.
 

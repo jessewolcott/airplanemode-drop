@@ -49,36 +49,65 @@
   .up.err { border-color: #5a2f2a; } .up.err .bar i { background: var(--bad); }
   .up button { background: none; border: 0; color: var(--dim); cursor: pointer; font: .78rem var(--mono); padding: 0 0 0 8px; }
 
-  h2.section { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font: 500 .75rem var(--mono); letter-spacing: .14em;
-               text-transform: uppercase; color: var(--dim); margin: 28px 0 10px; }
-  h2.section small { letter-spacing: 0; text-transform: none; font-size: .78rem; }
-  .space { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: -4px 0 14px; }
+  .listhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 28px 0 10px; flex-wrap: wrap; }
+  .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font: 500 .75rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); min-width: 0; }
+  .crumbs a { color: var(--dim); text-decoration: none; padding: 2px 4px; border-radius: 4px; }
+  .crumbs a:hover { color: var(--ink); background: var(--panel); }
+  .crumbs b { color: var(--ink); font-weight: 600; padding: 2px 4px; letter-spacing: .04em; text-transform: none; font-size: .85rem; overflow-wrap: anywhere; }
+  .crumbs i { font-style: normal; opacity: .5; }
+  .listhead .tools { display: flex; gap: 8px; align-items: center; }
+  .listhead small { color: var(--dim); font: .78rem var(--mono); }
+  .mini { font: .76rem var(--mono); color: var(--dim); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .mini:hover { color: var(--ink); border-color: var(--dim); }
+  .space { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 0 0 14px; }
   .space i { display: block; height: 100%; background: var(--dim); }
 
   .items { display: grid; gap: 10px; }
   .item { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
-  .item.pinned { border-color: #3d5b61; }
+  .item.kept { border-color: #3d5b61; }
+  .item.folder { cursor: pointer; transition: border-color .15s; }
+  .item.folder:hover { border-color: var(--line2); }
   .item .head { display: flex; gap: 12px; align-items: center; min-width: 0; }
   .item .icon { width: 44px; height: 44px; border-radius: 9px; background: var(--panel2); display: grid; place-items: center;
                 font: 700 .72rem var(--mono); color: var(--dim); flex: none; overflow: hidden; }
+  .item.folder .icon { background: #16292d; color: var(--accent); }
+  .item .icon svg { width: 22px; height: 22px; }
   .item .what { min-width: 0; flex: 1; }
   .item .what b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item .what small { color: var(--dim); font-size: .8rem; }
-  .item .acts { display: flex; gap: 6px; flex: none; }
+  .item .acts { display: flex; gap: 6px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
   .item .acts a, .item .acts button { font: .76rem var(--mono); color: var(--dim); background: none; border: 1px solid var(--line); border-radius: 6px;
                                        padding: 5px 9px; cursor: pointer; text-decoration: none; white-space: nowrap; }
   .item .acts a:hover, .item .acts button:hover { color: var(--ink); border-color: var(--dim); }
   .item .acts button.on { color: var(--accent); border-color: #3d5b61; }
+  .item .acts button.lock.on { color: var(--amber); border-color: #5b4a2c; }
   .item .acts button.del:hover { color: var(--bad); border-color: #5a2f2a; }
+  .badge { display: inline-block; font: .68rem var(--mono); color: var(--amber); border: 1px solid #5b4a2c; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; }
   .item img.preview { max-width: 100%; max-height: 360px; border-radius: 7px; display: block; background: var(--panel2); }
   .item video { width: 100%; max-height: 420px; border-radius: 7px; background: #000; }
   .item audio { width: 100%; }
+  a.play { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; background: linear-gradient(90deg, #2a2416, #1a1e24);
+           border: 1px solid #5b4a2c; color: var(--ink); text-decoration: none; transition: border-color .15s; }
+  a.play:hover { border-color: var(--amber); }
+  a.play .tri { width: 36px; height: 36px; border-radius: 50%; background: var(--amber); display: grid; place-items: center; flex: none; }
+  a.play .tri svg { width: 14px; height: 14px; margin-left: 2px; }
+  a.play b { font-weight: 600; } a.play small { display: block; color: var(--dim); font-size: .8rem; }
   .item pre { margin: 0; padding: 10px 12px; background: var(--bg); border-radius: 7px; white-space: pre-wrap; word-break: break-word;
               font: .9rem/1.45 var(--sans); max-height: 240px; overflow: auto; }
   .item pre a { color: var(--accent); }
   .empty { color: var(--dim); }
-  footer { margin-top: 36px; color: var(--dim); font: .75rem var(--mono); }
-  @media (max-width: 520px) { .item .head { flex-wrap: wrap; } .item .acts { width: 100%; } }
+  footer { margin-top: 36px; color: var(--dim); font: .75rem var(--mono); display: grid; gap: 6px; }
+  footer a { color: var(--accent); }
+  @media (max-width: 520px) { .item .head { flex-wrap: wrap; } .item .acts { width: 100%; justify-content: flex-start; } }
+
+  dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line2); border-radius: 12px; padding: 0; width: min(420px, calc(100vw - 32px)); }
+  dialog::backdrop { background: #000a; }
+  dialog h3 { margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 1rem; }
+  dialog .list { max-height: 50vh; overflow: auto; padding: 6px; }
+  dialog .list button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--ink); font: .92rem var(--sans); padding: 9px 10px; border-radius: 7px; cursor: pointer; }
+  dialog .list button:hover:not(:disabled) { background: var(--panel2); }
+  dialog .list button:disabled { color: var(--dim); cursor: default; }
+  dialog .foot { display: flex; justify-content: flex-end; padding: 10px 14px; border-top: 1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -92,7 +121,7 @@
   <section class="send">
     <label class="box drop" id="drop">
       <input type="file" id="files" multiple>
-      <b>Choose files to send</b>
+      <b id="dropTitle">Choose files to send</b>
       <small id="limits">or drop them here</small>
     </label>
     <form class="box" id="textForm">
@@ -102,17 +131,30 @@
   </section>
   <div class="uploads" id="uploads"></div>
 
-  <h2 class="section"><span>On the box</span><small id="usage"></small></h2>
+  <div class="listhead">
+    <nav class="crumbs" id="crumbs" aria-label="Folders"></nav>
+    <span class="tools"><small id="usage"></small><button class="mini" type="button" id="newFolder">+ folder</button></span>
+  </div>
   <div class="space"><i id="spaceBar"></i></div>
   <div class="items" id="items"><p class="empty">Loading…</p></div>
 
-  <footer id="foot">Anyone on this hotspot can see, download and delete what's here.</footer>
+  <footer><span id="foot">Anyone on this hotspot can see, download and delete what's here.</span><span id="adminNote"></span></footer>
 </main>
+
+<dialog id="moveDlg">
+  <h3>Move "<span id="moveName"></span>" to…</h3>
+  <div class="list" id="moveList"></div>
+  <div class="foot"><button class="mini" type="button" id="moveCancel">cancel</button></div>
+</dialog>
+
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const H = { "X-Drop": "1" };
-let info = null, version = -1;
+const JH = { ...H, "Content-Type": "application/json" };
+const FOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const PLAY_SVG = '<svg viewBox="0 0 14 14"><path d="M2 1l11 6-11 6z" fill="#1a1408"/></svg>';
+let info = null, version = -1, byId = new Map(), here = null, openers = [];
 
 function size(n) {
   if (n < 1024) return n + " bytes";
@@ -128,7 +170,7 @@ function age(t) {
   return Math.floor(s / 86400) + " d ago";
 }
 function kindOf(it) {
-  if (it.kind === "text") return "text";
+  if (it.kind === "text" || it.kind === "folder") return it.kind;
   const t = it.type || "";
   if (/^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(t)) return "image";
   if (t.startsWith("video/")) return "video";
@@ -140,47 +182,114 @@ function linkify(text) {
   return esc(text).replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)"'\]]/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
 }
 function left(it) {
-  if (it.pinned) return "kept";
+  if (it.kept) return it.pinned ? "kept" : "kept by its folder";
   const d = info.keep_days - (Date.now() / 1000 - it.created) / 86400;
   return d < 1 ? "goes in < 1 day" : `goes in ${Math.ceil(d)} d`;
+}
+const kids = fid => info.items.filter(i => (i.parent || null) === fid);
+function path(fid) { const out = []; let f = byId.get(fid); while (f && out.length < 12) { out.unshift(f); f = byId.get(f.parent); } return out; }
+function folderStats(fid) {
+  let n = 0, bytes = 0; const todo = [fid];
+  while (todo.length) { const id = todo.pop(); for (const i of kids(id)) { if (i.kind === "folder") todo.push(i.id); else { n++; bytes += i.kind === "file" ? i.size : 0; } } }
+  return { n, bytes };
+}
+
+// ---- "open with": apps on the box that say they can play a type ----
+// The platform lists the apps the admin hasn't switched off (from its apps.json), e.g.
+// {"id": "cinema", "opens": {"from": "drop", "types": ["video/*", "audio/*"], "url": "/cinema/#play={id}"}}
+// Standalone there's no platform: the request fails and Drop plays things itself.
+fetch("../api/apps", { cache: "no-store" }).then(r => r.ok ? r.json() : []).then(apps => {
+  openers = (Array.isArray(apps) ? apps : []).filter(a => a.opens && a.opens.from === "drop" && Array.isArray(a.opens.types) && /^\/[a-z0-9-]+\//.test(a.opens.url || ""));
+  if (openers.length && info) { version = -1; refresh(); }
+}).catch(() => {});
+const typeMatch = (pattern, type) => pattern.endsWith("/*") ? type.startsWith(pattern.slice(0, -1)) : pattern === type;
+function canPlayHere(it) {
+  const k = kindOf(it); if (k !== "video" && k !== "audio") return false;
+  try { return document.createElement(k).canPlayType(it.type) !== ""; } catch { return false; }
+}
+function openerFor(it) {
+  if (!canPlayHere(it)) return null;
+  const a = openers.find(o => o.opens.types.some(p => typeMatch(p, it.type)));
+  return a ? { name: a.name, url: ".." + a.opens.url.replace("{id}", encodeURIComponent(it.id)) } : null;
 }
 
 // ---- list: keyed by id, so a playing video isn't rebuilt by the refresh ----
 function itemNode(it) {
-  const k = kindOf(it), url = "api/files/" + it.id;
+  const k = kindOf(it), url = "api/files/" + it.id, open = openerFor(it);
   const el = document.createElement("article");
-  el.className = "item"; el.dataset.id = it.id;
-  const icon = k === "text" ? "TXT" : esc(ext(it.name));
-  const dl = it.kind === "file" ? `<a href="${url}?dl=1" download>save</a>` : `<button type="button" data-copy>copy</button>`;
+  el.className = "item" + (k === "folder" ? " folder" : ""); el.dataset.id = it.id; el.dataset.sig = sig(it);
+  const icon = k === "folder" ? FOLDER_SVG : k === "text" ? "TXT" : esc(ext(it.name));
+  const save = it.kind === "file" && (it.download || info.admin) ? `<a href="${url}?dl=1" download>save</a>` : "";   // the admin can always save
+  const copy = it.kind === "text" ? `<button type="button" data-copy>copy</button>` : "";
+  const lock = info.admin && it.kind !== "text" ? `<button type="button" class="lock" data-lock></button>` : "";
+  const ren = k === "folder" ? `<button type="button" data-rename>rename</button>` : "";
+  const move = k !== "folder" || hasOtherFolders(it) ? `<button type="button" data-move>move</button>` : "";
+  const noSave = it.download ? "" : ' controlslist="nodownload" oncontextmenu="return false"';
   el.innerHTML = `
     <div class="head">
       <span class="icon">${icon}</span>
       <span class="what"><b></b><small></small></span>
-      <span class="acts">${dl}<button type="button" data-pin></button><button type="button" class="del" data-del>delete</button></span>
+      <span class="acts">${save}${copy}${ren}${move}<button type="button" data-pin></button>${lock}<button type="button" class="del" data-del>delete</button></span>
     </div>
     ${k === "text" ? `<pre>${linkify(it.text)}</pre>`
-      : k === "image" ? `<a href="${url}" target="_blank"><img class="preview" src="${url}" alt="${esc(it.name)}" loading="lazy"></a>`
-      : k === "video" ? `<video controls preload="metadata" playsinline src="${url}"></video>`
-      : k === "audio" ? `<audio controls preload="none" src="${url}"></audio>` : ""}`;
-  el.querySelector(".what b").textContent = it.kind === "text" ? it.name : it.name;
+      : open ? `<a class="play" href="${esc(open.url)}"><span class="tri">${PLAY_SVG}</span><span><b>Play in ${esc(open.name)}</b><small>${k === "video" ? "Full screen, picks up where you left off" : "With the rest of this folder"}</small></span></a>`
+      : k === "image" ? `<a href="${url}" target="_blank"><img class="preview" src="${url}" alt="${esc(it.name)}" loading="lazy"${it.download ? "" : ' oncontextmenu="return false"'}></a>`
+      : k === "video" ? `<video controls preload="metadata" playsinline src="${url}"${noSave}></video>`
+      : k === "audio" ? `<audio controls preload="none" src="${url}"${noSave}></audio>` : ""}`;
+  el.querySelector(".what b").textContent = it.name;
   el.querySelector(".what b").title = it.name;
   return el;
 }
+// rebuild a node when something that changes its markup changes (not on every refresh)
+const sig = it => [it.name, it.download, info.admin, openers.length, it.kind === "folder" ? hasOtherFolders(it) : 1].join("|");
+function hasOtherFolders(it) { return info.items.some(i => i.kind === "folder" && i.id !== it.id) || it.parent; }
 function updateNode(el, it) {
-  el.classList.toggle("pinned", !!it.pinned);
-  el.querySelector(".what small").textContent = (it.kind === "text" ? "text" : size(it.size)) + " · " + age(it.created) + " · " + left(it);
+  el.classList.toggle("kept", !!it.kept);
+  const k = kindOf(it);
+  let meta;
+  if (k === "folder") { const s = folderStats(it.id); meta = `${s.n} item${s.n === 1 ? "" : "s"}${s.bytes ? " · " + size(s.bytes) : ""}${it.pinned ? " · everything kept" : ""}`; }
+  else meta = (it.kind === "text" ? "text" : size(it.size)) + " · " + age(it.created) + " · " + left(it);
+  const small = el.querySelector(".what small");
+  small.textContent = meta;
+  if (!it.download && it.kind !== "text") {
+    const by = it.blocked_by && byId.get(it.blocked_by);
+    small.insertAdjacentHTML("beforeend", `<span class="badge" title="${by ? "Turned off for the folder " + esc(by.name) : "Turned off by the admin"}">no downloads</span>`);
+  }
   const p = el.querySelector("[data-pin]");
   p.textContent = it.pinned ? "kept" : "keep"; p.classList.toggle("on", !!it.pinned);
-  p.title = it.pinned ? "Kept until someone deletes it. Tap to let it expire." : `Keep past ${info.keep_days} days`;
+  p.title = k === "folder" ? (it.pinned ? "Everything in here is kept. Tap to let it expire again." : "Keep everything in this folder")
+    : it.pinned ? "Kept until someone deletes it. Tap to let it expire." : `Keep past ${info.keep_days} days`;
+  const l = el.querySelector("[data-lock]");
+  if (l) {
+    const viaFolder = !it.nodownload && it.blocked_by && byId.get(it.blocked_by);
+    l.textContent = it.nodownload ? "downloads off" : viaFolder ? "off (folder)" : "downloads on";
+    l.classList.toggle("on", !!it.nodownload || !!viaFolder);
+    l.disabled = !!viaFolder;
+    l.title = viaFolder ? `Downloads are off for the folder ${viaFolder.name}. Change it there.`
+      : it.nodownload ? "Only you (the admin) can save copies. Tap to let everyone download again."
+      : `Stop people saving copies${k === "folder" ? " of anything in this folder" : ""}. They can still play it here.`;
+  }
+}
+function renderCrumbs() {
+  const parts = path(here);
+  $("#crumbs").innerHTML = (parts.length ? `<a href="#">On the box</a>` : `<span>On the box</span>`) +
+    parts.map((f, i) => `<i>/</i>` + (i === parts.length - 1 ? `<b>${esc(f.name)}</b>` : `<a href="#f=${f.id}">${esc(f.name)}</a>`)).join("");
+  $("#dropTitle").textContent = parts.length ? `Send files to ${parts.at(-1).name}` : "Choose files to send";
 }
 function render() {
+  byId = new Map(info.items.map(i => [i.id, i]));
+  if (here && !byId.has(here)) here = null;        // the folder was deleted
+  renderCrumbs();
   const box = $("#items"), have = new Map([...box.querySelectorAll(".item")].map(e => [e.dataset.id, e]));
-  const items = info.items;
-  if (!items.length) { box.innerHTML = '<p class="empty">Nothing here yet. Send something from any device on the hotspot.</p>'; }
+  const list = kids(here);
+  const items = [...list.filter(i => i.kind === "folder").sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })), ...list.filter(i => i.kind !== "folder")];
+  if (!items.length) { box.innerHTML = `<p class="empty">${here ? "This folder is empty. Send files while you're in it, or move things here." : "Nothing here yet. Send something from any device on the hotspot."}</p>`; }
   else {
     box.querySelector(".empty")?.remove();
     items.forEach((it, i) => {
-      const el = have.get(it.id) || itemNode(it);
+      let el = have.get(it.id);
+      if (el && el.dataset.sig !== sig(it)) { const fresh = itemNode(it); el.replaceWith(fresh); el = fresh; }
+      el = el || itemNode(it);
       have.delete(it.id);
       updateNode(el, it);
       if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null);
@@ -191,34 +300,90 @@ function render() {
   $("#spaceBar").style.width = pct + "%";
   $("#usage").textContent = `${size(info.used)} used · ${size(info.free)} free`;
   $("#limits").textContent = `or drop them here · up to ${size(info.max_file)} each`;
-  $("#foot").textContent = `Anyone on this hotspot can see, download and delete what's here. Items go after ${info.keep_days} days unless kept.`;
+  $("#foot").textContent = `Anyone on this hotspot can see and delete what's here. Items go after ${info.keep_days} days unless kept.`;
+  $("#adminNote").innerHTML = info.admin ? "Signed in as admin: you can turn downloads off for a file or folder. People can still play it here; it stops casual copies, not a determined one."
+    : info.admin_available ? `Admin? <a href="../admin/">Sign in</a> to turn downloads off for files or folders.` : "";
 }
 async function refresh() {
   try {
     const d = await (await fetch("api/items", { cache: "no-store" })).json();
-    const changed = d.version !== version; version = d.version; info = d;
+    const changed = d.version !== version || !info || d.admin !== info.admin; version = d.version; info = d;
     if (changed) render();
     else document.querySelectorAll(".item").forEach(el => { const it = info.items.find(i => i.id === el.dataset.id); if (it) updateNode(el, it); });
   } catch { /* box restarting: try again next time */ }
+}
+function go() {
+  const m = /^#f=([0-9a-f]{16})$/.exec(location.hash);
+  here = m ? m[1] : null;
+  if (info) render();
+}
+window.addEventListener("hashchange", go);
+
+async function call(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) alert((await r.json().catch(() => ({}))).detail || `Failed (${r.status})`);
+  return r.ok;
 }
 
 $("#items").addEventListener("click", async e => {
   const el = e.target.closest(".item"); if (!el) return;
   const it = info.items.find(i => i.id === el.dataset.id); if (!it) return;
   if (e.target.closest("[data-del]")) {
-    if (!confirm(`Delete "${it.name}" for everyone?`)) return;
-    await fetch("api/items/" + it.id, { method: "DELETE", headers: H });
+    const s = it.kind === "folder" ? folderStats(it.id) : null;
+    if (!confirm(s ? `Delete the folder "${it.name}"${s.n ? ` and the ${s.n} item${s.n === 1 ? "" : "s"} in it` : ""} for everyone?` : `Delete "${it.name}" for everyone?`)) return;
+    await call("api/items/" + it.id, { method: "DELETE", headers: H });
   } else if (e.target.closest("[data-pin]")) {
-    await fetch(`api/items/${it.id}/pin`, { method: "POST", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ pinned: !it.pinned }) });
+    await call(`api/items/${it.id}/pin`, { method: "POST", headers: JH, body: JSON.stringify({ pinned: !it.pinned }) });
+  } else if (e.target.closest("[data-lock]")) {
+    await call(`api/items/${it.id}`, { method: "PATCH", headers: JH, body: JSON.stringify({ nodownload: !it.nodownload }) });
+  } else if (e.target.closest("[data-rename]")) {
+    const name = prompt("Folder name", it.name); if (!name || !name.trim()) return;
+    await call(`api/items/${it.id}`, { method: "PATCH", headers: JH, body: JSON.stringify({ name }) });
+  } else if (e.target.closest("[data-move]")) {
+    return openMove(it);
   } else if (e.target.closest("[data-copy]")) {
     const b = e.target.closest("[data-copy]");
     try { await navigator.clipboard.writeText(it.text); b.textContent = "copied"; }
     catch { const r = document.createRange(); r.selectNodeContents(el.querySelector("pre")); getSelection().removeAllRanges(); getSelection().addRange(r); b.textContent = "selected"; }
     setTimeout(() => b.textContent = "copy", 1500);
     return;
+  } else if (it.kind === "folder" && !e.target.closest("a, button")) {
+    location.hash = "f=" + it.id; return;
   } else return;
   refresh();
 });
+
+$("#newFolder").addEventListener("click", async () => {
+  const name = prompt(here ? `New folder inside ${byId.get(here).name}` : "New folder name", "");
+  if (!name || !name.trim()) return;
+  if (await call("api/folders", { method: "POST", headers: JH, body: JSON.stringify({ name, parent: here }) })) refresh();
+});
+
+// ---- move ----
+let moving = null;
+function openMove(it) {
+  moving = it;
+  $("#moveName").textContent = it.name;
+  const blocked = new Set(it.kind === "folder" ? [it.id, ...descendantFolders(it.id)] : []);
+  const rows = [{ id: "root", label: "On the box (top)", depth: 0 }];
+  const walk = (fid, d) => info.items.filter(i => i.kind === "folder" && (i.parent || null) === fid)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    .forEach(f => { rows.push({ id: f.id, label: f.name, depth: d }); walk(f.id, d + 1); });
+  walk(null, 1);
+  $("#moveList").innerHTML = rows.map(r => {
+    const current = (r.id === "root" ? null : r.id) === (it.parent || null);
+    const off = current || blocked.has(r.id);
+    return `<button type="button" data-to="${r.id}" ${off ? "disabled" : ""} style="padding-left:${10 + r.depth * 16}px">${r.id === "root" ? "" : "📁 "}${esc(r.label)}${current ? " (here now)" : ""}</button>`;
+  }).join("");
+  $("#moveDlg").showModal();
+}
+function descendantFolders(fid) { const out = []; const todo = [fid]; while (todo.length) { const id = todo.pop(); for (const f of info.items) if (f.kind === "folder" && f.parent === id) { out.push(f.id); todo.push(f.id); } } return out; }
+$("#moveList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-to]"); if (!b || !moving) return;
+  $("#moveDlg").close();
+  if (await call(`api/items/${moving.id}`, { method: "PATCH", headers: JH, body: JSON.stringify({ parent: b.dataset.to }) })) refresh();
+});
+$("#moveCancel").addEventListener("click", () => $("#moveDlg").close());
 
 // ---- sending ----
 $("#textForm").addEventListener("submit", async e => {
@@ -226,7 +391,7 @@ $("#textForm").addEventListener("submit", async e => {
   const text = $("#text").value.trim(); if (!text) return;
   $("#textBtn").disabled = true; $("#textMsg").textContent = "";
   try {
-    const r = await fetch("api/texts", { method: "POST", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const r = await fetch("api/texts", { method: "POST", headers: JH, body: JSON.stringify({ text, parent: here }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
     $("#text").value = ""; refresh();
   } catch (err) { $("#textMsg").textContent = err.message; }
@@ -241,7 +406,7 @@ function addFiles(list) {
     row.innerHTML = `<div class="top"><span></span><span>waiting <button type="button">cancel</button></span></div><div class="bar"><i></i></div>`;
     row.querySelector(".top span").textContent = f.name;
     $("#uploads").append(row);
-    const job = { f, row, xhr: null, cancelled: false };
+    const job = { f, row, xhr: null, cancelled: false, parent: here };   // lands in the folder you were in
     row.querySelector("button").onclick = () => { job.cancelled = true; job.xhr?.abort(); row.remove(); };
     if (info && f.size > info.max_file) { fail(job, `too big: the limit is ${size(info.max_file)}`); continue; }
     queue.push(job);
@@ -261,7 +426,7 @@ async function pump() {
     await new Promise(done => {
       const x = job.xhr = new XMLHttpRequest(), stat = job.row.querySelector(".top span:last-child");
       const btn = stat.querySelector("button");
-      x.open("PUT", "api/files?name=" + encodeURIComponent(job.f.name));
+      x.open("PUT", "api/files?name=" + encodeURIComponent(job.f.name) + (job.parent ? "&parent=" + job.parent : ""));
       x.setRequestHeader("X-Drop", "1");
       x.upload.onprogress = e => {
         if (!e.lengthComputable) return;
@@ -289,6 +454,7 @@ const drop = $("#drop");
 drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
 window.addEventListener("beforeunload", e => { if (sending) { e.preventDefault(); e.returnValue = ""; } });
 
+go();
 refresh();
 setInterval(refresh, 4000);
 </script>

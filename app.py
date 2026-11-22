@@ -1,16 +1,24 @@
 """Drop: pass files and text between every device on the AirplaneMode hotspot.
 
 API (all relative to the app's root; the platform serves it at /drop/):
-  GET    api/items                 items newest first, plus storage use
-  PUT    api/files?name=<name>     upload one file; the raw file is the request body (streamed)
-  POST   api/texts   {text}        share a text snippet or link
-  GET    api/files/{id}            download (HTTP Range supported, so media can seek)
-  POST   api/items/{id}/pin {pinned}   keep an item past the expiry
-  DELETE api/items/{id}
+  GET    api/items                 every item (flat, newest first, with "parent"), storage use, admin flag
+  PUT    api/files?name=&parent=   upload one file into a folder (or the top); the body is the file (streamed)
+  POST   api/texts   {text, parent}   share a text snippet or link
+  POST   api/folders {name, parent}   make a folder
+  GET    api/files/{id}            stream or download (HTTP Range supported, so media can seek)
+  PATCH  api/items/{id} {name?, parent?, nodownload?}   rename, move, or (admin) turn downloads off
+  POST   api/items/{id}/pin {pinned}   keep an item past the expiry (on a folder: everything inside)
+  DELETE api/items/{id}            (a folder goes with everything in it)
 
 Changes need the header "X-Drop: 1". Browsers can't send it cross-site without a CORS
 preflight, which this app never allows, so other websites can't add or delete items.
 There's no login: anyone on the hotspot can use Drop. The hotspot password is the access control.
+
+Admin: whoever is signed in to the AirplaneMode admin panel. Drop is served from the same
+address, so it gets the panel's session cookie and asks the admin service (ADMIN_URL) whether
+it's valid. Only the admin can turn downloads off ("nodownload") for a file or a folder; that
+hides "save" and refuses ?dl=1 for everyone else, while streaming (to the page or a player app)
+keeps working. It keeps big files on the box; it can't stop someone recording the stream.
 """
 import asyncio
 import json
@@ -22,6 +30,7 @@ import secrets
 import shutil
 import time
 import unicodedata
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
@@ -53,6 +62,12 @@ MAX_TEXT = 64 * 1024
 DISK_MARGIN = 64 * 1024 ** 2         # always leave this much of the disk free
 CHUNK = 1024 ** 2                    # write to disk in 1 MB pieces
 ID_RE = re.compile(r"^[0-9a-f]{16}$")
+MAX_DEPTH = 8                        # folders inside folders
+
+# The platform's admin service. Empty (standalone): nobody is admin.
+ADMIN_URL = os.getenv("ADMIN_URL", "").rstrip("/")
+ADMIN_COOKIE = "am_admin"
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 FILES, TMP, META = DATA / "files", DATA / "tmp", DATA / "items.json"
 
@@ -87,7 +102,13 @@ class Store:
             self.items = []
         # drop entries whose file is gone, and files nobody knows about
         known = {i["id"] for i in self.items}
-        self.items = [i for i in self.items if i["kind"] == "text" or (FILES / i["id"]).exists()]
+        self.items = [i for i in self.items if i["kind"] != "file" or (FILES / i["id"]).exists()]
+        # items from 0.1 have no parent/nodownload; parents that vanished mean "the top"
+        folders = {i["id"] for i in self.items if i["kind"] == "folder"}
+        for i in self.items:
+            i.setdefault("nodownload", False)
+            if i.get("parent") not in folders:
+                i["parent"] = None
         for p in FILES.iterdir():
             if p.name not in known:
                 p.unlink(missing_ok=True)
@@ -109,6 +130,47 @@ class Store:
         disk = shutil.disk_usage(DATA).free - DISK_MARGIN
         return max(0, min(MAX_BYTES - self.held(), disk))
 
+    def by_id(self):
+        return {i["id"]: i for i in self.items}
+
+    def chain(self, item, ids=None):
+        """The item, then its folder, that folder's folder... up to the top."""
+        ids = ids or self.by_id()
+        seen = set()
+        while item and item["id"] not in seen:
+            seen.add(item["id"])
+            yield item
+            item = ids.get(item.get("parent"))
+
+    def kept(self, item, ids=None):
+        return any(i.get("pinned") for i in self.chain(item, ids))
+
+    def blocked(self, item, ids=None):
+        """The item or folder that turned downloads off for this item, or None."""
+        return next((i for i in self.chain(item, ids) if i.get("nodownload")), None)
+
+    def descendants(self, folder_id):
+        out, todo = [], [folder_id]
+        while todo:
+            fid = todo.pop()
+            kids = [i for i in self.items if i.get("parent") == fid]
+            out += kids
+            todo += [k["id"] for k in kids if k["kind"] == "folder"]
+        return out
+
+    def depth(self, fid):
+        """How many folders deep a folder is (the top = 0)."""
+        return sum(1 for _ in self.chain(self.by_id().get(fid))) if fid else 0
+
+    def folder(self, fid):
+        """A folder id from the client -> a folder that exists (None = the top)."""
+        if fid in (None, "", "root"):
+            return None
+        item = self.get(fid)
+        if item["kind"] != "folder":
+            raise HTTPException(400, "That's not a folder.")
+        return fid
+
     def get(self, iid):
         if not ID_RE.match(iid):
             raise HTTPException(404, "No such item.")
@@ -120,7 +182,9 @@ class Store:
     def sweep(self):
         """Remove expired, unpinned items."""
         cutoff = now() - KEEP_DAYS * 86400
-        old = [i for i in self.items if not i.get("pinned") and i["created"] < cutoff]
+        ids = self.by_id()
+        # folders themselves never expire (they're tiny); "keep" on a folder keeps what's inside
+        old = [i for i in self.items if i["kind"] != "folder" and i["created"] < cutoff and not self.kept(i, ids)]
         if not old:
             return 0
         for i in old:
@@ -163,6 +227,33 @@ def need_header(request: Request):
         raise HTTPException(403, "Missing request header.")
 
 
+def _ask_admin_service(token):
+    req = urllib.request.Request(f"{ADMIN_URL}/api/admin/session", headers={"Cookie": f"{ADMIN_COOKIE}={token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+check_admin_token = _ask_admin_service   # tests replace this
+_admin_cache = {}                         # token -> (is admin, checked until)
+
+
+async def is_admin(request: Request):
+    token = request.cookies.get(ADMIN_COOKIE, "")
+    if not ADMIN_URL or not TOKEN_RE.match(token):
+        return False
+    hit = _admin_cache.get(token)
+    if hit and hit[1] > now():
+        return hit[0]
+    answer = await anyio.to_thread.run_sync(check_admin_token, token)
+    if len(_admin_cache) > 256:
+        _admin_cache.clear()
+    _admin_cache[token] = (answer, now() + 30)
+    return answer
+
+
 def clean_name(name):
     """A display name only (files are stored by id): last path part, no control characters."""
     name = unicodedata.normalize("NFC", name or "")
@@ -180,10 +271,17 @@ def human(n):
 
 # ---------------- reading ----------------
 @app.get("/api/items")
-async def items():
+async def items(request: Request):
     async with store.lock:
         store.sweep()
-    return {"version": store.version, "items": sorted(store.items, key=lambda i: -i["created"]),
+    ids = store.by_id()
+    out = []
+    for i in sorted(store.items, key=lambda i: -i["created"]):
+        b = store.blocked(i, ids)
+        out.append({**i, "kept": store.kept(i, ids), "download": b is None,
+                    "blocked_by": None if b is None or b is i else b["id"]})
+    return {"version": store.version, "items": out,
+            "admin": await is_admin(request), "admin_available": bool(ADMIN_URL),
             "used": store.used(), "cap": MAX_BYTES, "free": store.free(), "max_file": MAX_FILE,
             "keep_days": KEEP_DAYS}
 
@@ -220,6 +318,9 @@ async def download(iid: str, request: Request, dl: bool = False):
     size = path.stat().st_size
     ctype = item["type"]
     inline = not dl and INLINE_TYPES.match(ctype)
+    if not inline and store.blocked(item) and not await is_admin(request):
+        # streaming to the page or a player still works; saving a copy doesn't
+        raise HTTPException(403, "Downloads are turned off for this. You can still play it here.")
     headers = {
         "Accept-Ranges": "bytes",
         "Content-Disposition": content_disposition("inline" if inline else "attachment", item["name"]),
@@ -257,9 +358,10 @@ async def download(iid: str, request: Request, dl: bool = False):
 
 # ---------------- changes ----------------
 @app.put("/api/files")
-async def upload(request: Request, name: str = "file"):
+async def upload(request: Request, name: str = "file", parent: str | None = None):
     need_header(request)
     name = clean_name(name)
+    store.folder(parent)  # fail before receiving anything
     declared = request.headers.get("content-length")
     declared = int(declared) if declared and declared.isdigit() else None
     if declared is not None:
@@ -295,8 +397,12 @@ async def upload(request: Request, name: str = "file"):
             raise HTTPException(400, "The upload was cut short. Try again.")
         ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
         item = {"id": iid, "kind": "file", "name": name, "size": written, "type": ctype,
-                "created": now(), "pinned": False}
+                "created": now(), "pinned": False, "nodownload": False, "parent": None}
         async with store.lock:
+            try:   # the folder may have been deleted while this was uploading
+                item["parent"] = store.folder(parent)
+            except HTTPException:
+                pass
             part.replace(FILES / iid)
             store.items.append(item)
             store.save()
@@ -312,6 +418,7 @@ async def upload(request: Request, name: str = "file"):
 
 class Text(BaseModel):
     text: str
+    parent: str | None = None
 
 
 @app.post("/api/texts")
@@ -324,9 +431,61 @@ async def add_text(body: Text, request: Request):
         raise HTTPException(413, "That's too long for a text item. Save it as a file and upload it instead.")
     first = text.splitlines()[0]
     item = {"id": secrets.token_hex(8), "kind": "text", "name": first[:80], "size": len(text.encode("utf-8")),
-            "type": "text/plain", "text": text, "created": now(), "pinned": False}
+            "type": "text/plain", "text": text, "created": now(), "pinned": False, "nodownload": False}
     async with store.lock:
+        item["parent"] = store.folder(body.parent)
         store.items.append(item)
+        store.save()
+    return item
+
+
+class NewFolder(BaseModel):
+    name: str
+    parent: str | None = None
+
+
+@app.post("/api/folders")
+async def add_folder(body: NewFolder, request: Request):
+    need_header(request)
+    name = clean_name(body.name)[:80]
+    async with store.lock:
+        parent = store.folder(body.parent)
+        if store.depth(parent) >= MAX_DEPTH:
+            raise HTTPException(400, "That's too many folders deep.")
+        item = {"id": secrets.token_hex(8), "kind": "folder", "name": name, "size": 0, "type": "",
+                "created": now(), "pinned": False, "nodownload": False, "parent": parent}
+        store.items.append(item)
+        store.save()
+    return item
+
+
+class Change(BaseModel):
+    name: str | None = None
+    parent: str | None = None     # a folder id, or "root" for the top
+    nodownload: bool | None = None
+
+
+@app.patch("/api/items/{iid}")
+async def change(iid: str, body: Change, request: Request):
+    need_header(request)
+    if body.nodownload is not None and not await is_admin(request):
+        raise HTTPException(403, "Only the admin can turn downloads on or off. Sign in to the admin panel first.")
+    async with store.lock:
+        item = store.get(iid)
+        if body.name is not None:
+            item["name"] = clean_name(body.name)[:80 if item["kind"] == "folder" else 200]
+        if body.parent is not None:
+            target = store.folder(body.parent)
+            if target and item["kind"] == "folder":
+                below = [d for d in store.descendants(iid) if d["kind"] == "folder"]
+                if target == iid or any(d["id"] == target for d in below):
+                    raise HTTPException(400, "A folder can't go inside itself.")
+                extra = max([store.depth(d["id"]) - store.depth(iid) for d in below] + [0])
+                if store.depth(target) + 1 + extra > MAX_DEPTH:
+                    raise HTTPException(400, "That's too many folders deep.")
+            item["parent"] = target
+        if body.nodownload is not None:
+            item["nodownload"] = body.nodownload
         store.save()
     return item
 
@@ -350,11 +509,14 @@ async def delete(iid: str, request: Request):
     need_header(request)
     async with store.lock:
         item = store.get(iid)
-        store.items = [i for i in store.items if i["id"] != iid]
+        gone = [item] + (store.descendants(iid) if item["kind"] == "folder" else [])
+        ids = {i["id"] for i in gone}
+        store.items = [i for i in store.items if i["id"] not in ids]
         store.save()
-        if item["kind"] == "file":
-            (FILES / iid).unlink(missing_ok=True)
-    return {"ok": True}
+        for i in gone:
+            if i["kind"] == "file":
+                (FILES / i["id"]).unlink(missing_ok=True)
+    return {"ok": True, "deleted": len(gone)}
 
 
 @app.exception_handler(HTTPException)

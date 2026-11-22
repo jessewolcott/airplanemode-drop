@@ -27,9 +27,22 @@ Inside the platform stack it's served at `/drop/` with the prefix stripped.
   uploaded HTML/SVG file must never render as a page.
 - Changes need the `X-Drop: 1` header (blocks cross-site requests). There's no login by
   design: the hotspot password is the access control.
+- **Admin = the platform admin panel's session.** `is_admin()` forwards the `am_admin` cookie
+  (only if it matches `TOKEN_RE`) to `ADMIN_URL/api/admin/session`, cached 30 s. Standalone
+  (`ADMIN_URL` empty) nobody is admin. Only the admin may change `nodownload`.
+- **Folders** are items with `kind: "folder"`; everything has `parent` (a folder id or null).
+  `nodownload` and `pinned` apply to everything below a folder (`store.blocked()`,
+  `store.kept()`). Guard moves against cycles and `MAX_DEPTH`. Deleting a folder deletes its
+  contents. 0.1 data has no `parent`/`nodownload`; `load()` fills them in.
+- **Downloads off never blocks streaming** (inline types, Range): Cinema and the page must
+  still play. It refuses `?dl=1` and attachment-only types for non-admins.
+- "Play in …" comes from the platform's `GET /api/apps` (apps the admin hasn't hidden) entries
+  with `opens.from == "drop"`. Cinema (`../airplanemode-cinema`) reads `api/items`, so keep
+  its fields (`kind`, `parent`, `type`, `download`) stable.
 - `items.json` is written atomically (temp file + rename) under `store.lock`.
 
 ## Releasing
 
 Push a `vX.Y.Z` tag. CI tests, then publishes `ghcr.io/jessewolcott/airplanemode-drop:X.Y.Z`
-(arm64 + amd64). **Ask Jesse before pushing a release tag.** Not released yet.
+(arm64 + amd64). **Ask Jesse before pushing a release tag.** Released: 0.1.0. Next: 0.2.0
+(folders, downloads off, Play in Cinema).

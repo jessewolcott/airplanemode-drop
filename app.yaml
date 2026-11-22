@@ -13,3 +13,4 @@ env:
   DROP_MAX_BYTES: Space Drop may use in total (default 4g; k/m/g suffixes).
   DROP_MAX_FILE: Largest single file (default 2g).
   DROP_KEEP_DAYS: Days before an item is deleted unless someone taps "keep" (default 7).
+  ADMIN_URL: The platform's admin service (http://admin:8000), to recognise the admin, who can turn downloads off. Empty = no admin.
