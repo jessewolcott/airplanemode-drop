@@ -202,6 +202,30 @@ def test_restart_keeps_items_and_cleans_up():
     assert list(drop.TMP.iterdir()) == [] and not (drop.FILES / "0123456789abcdef").exists()
 
 
+def test_unreadable_metadata_never_deletes_files():
+    """A corrupt or missing items.json must not wipe the box: files are recovered instead."""
+    reset()
+    film = ok(put("film.mp4", b"\x00\x00\x00\x18ftypmp42" + b"v" * 100))
+    note = ok(put("notes.bin", b"plain bytes"))
+    drop.META.write_text("{ this is not json", encoding="utf-8")
+    drop.store.load()
+    bad = [p.name for p in drop.DATA.iterdir() if p.name.startswith("items.json.bad-")]
+    assert len(bad) == 1                                              # the damaged file is kept for a look
+    got = {i["id"]: i for i in drop.store.items}
+    assert set(got) == {film["id"], note["id"]}
+    assert (drop.FILES / film["id"]).exists() and (drop.FILES / note["id"]).exists()
+    assert got[film["id"]]["type"] == "video/mp4" and got[film["id"]]["name"].endswith(".mp4")
+    assert got[note["id"]]["type"] == "application/octet-stream"
+    assert all(i["pinned"] for i in got.values())                     # recovered files don't expire on their own
+    assert drop.META.exists()                                         # a fresh items.json describes them
+    # missing items.json with files on disk: same
+    drop.META.unlink()
+    drop.store.load()
+    assert {i["id"] for i in drop.store.items} == {film["id"], note["id"]}
+    for p in drop.DATA.glob("items.json.bad-*"):
+        p.unlink()
+
+
 def folder(name, parent=None):
     return ok(c.post("/api/folders", json={"name": name, "parent": parent}, headers=H))
 

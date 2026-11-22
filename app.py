@@ -80,6 +80,23 @@ def now():
     return time.time()
 
 
+# For files recovered without their metadata: guess the type from the first bytes.
+MAGIC = [(4, b"ftyp", "video/mp4", ".mp4"), (0, b"\x1aE\xdf\xa3", "video/webm", ".webm"), (0, b"ID3", "audio/mpeg", ".mp3"),
+         (0, b"\xff\xfb", "audio/mpeg", ".mp3"), (0, b"\xff\xd8\xff", "image/jpeg", ".jpg"), (0, b"\x89PNG", "image/png", ".png"),
+         (0, b"GIF8", "image/gif", ".gif"), (0, b"%PDF", "application/pdf", ".pdf"), (0, b"OggS", "audio/ogg", ".ogg")]
+
+
+def sniff(path):
+    try:
+        head = path.open("rb").read(16)
+    except OSError:
+        return "application/octet-stream", ""
+    for off, sig, kind, ext in MAGIC:
+        if head[off:off + len(sig)] == sig:
+            return kind, ext
+    return "application/octet-stream", ""
+
+
 # ---------------- items (metadata in one JSON file) ----------------
 class Store:
     def __init__(self):
@@ -93,16 +110,35 @@ class Store:
             d.mkdir(parents=True, exist_ok=True)
         for p in TMP.iterdir():      # partial uploads from before a restart
             p.unlink(missing_ok=True)
+        # With no readable items.json, the files on disk are all there is: keep them (as
+        # "recovered" items) rather than treating them as leftovers. Only a good items.json
+        # lets us delete files it doesn't know about.
+        recovering = False
         try:
             self.items = json.loads(META.read_text(encoding="utf-8"))["items"]
         except FileNotFoundError:
             self.items = []
+            recovering = True
         except Exception as e:
-            log.warning("could not read %s: %s", META, e)
+            bad = META.with_name(f"items.json.bad-{int(now())}")
+            log.warning("could not read %s (%s); kept it as %s and recovering files from disk", META, e, bad.name)
+            META.replace(bad)
             self.items = []
+            recovering = True
         # drop entries whose file is gone, and files nobody knows about
         known = {i["id"] for i in self.items}
         self.items = [i for i in self.items if i["kind"] != "file" or (FILES / i["id"]).exists()]
+        recovered = 0
+        for p in FILES.iterdir():
+            if p.name not in known and recovering and ID_RE.match(p.name):
+                kind, ext = sniff(p)
+                st = p.stat()
+                self.items.append({"id": p.name, "kind": "file", "name": f"recovered-{p.name[:6]}{ext}", "size": st.st_size,
+                                   "type": kind, "created": st.st_mtime, "pinned": True, "nodownload": False, "parent": None})
+                known.add(p.name)
+                recovered += 1
+        if recovered:
+            log.warning("recovered %d file(s) without metadata; they're kept until someone deletes them", recovered)
         # items from 0.1 have no parent/nodownload; parents that vanished mean "the top"
         folders = {i["id"] for i in self.items if i["kind"] == "folder"}
         for i in self.items:
@@ -113,6 +149,8 @@ class Store:
             if p.name not in known:
                 p.unlink(missing_ok=True)
         self.version = 1
+        if recovered:
+            self.save()
 
     def save(self):
         tmp = META.with_suffix(".tmp")
