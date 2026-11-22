@@ -23,7 +23,7 @@ jobs:
 
       - name: API tests
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements.txt httpx==0.28.1   # httpx: for FastAPI TestClient
           python tests/test_drop.py
 
       - uses: docker/setup-qemu-action@v3
