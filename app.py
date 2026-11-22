@@ -73,7 +73,10 @@ FILES, TMP, META = DATA / "files", DATA / "tmp", DATA / "items.json"
 
 # Shown in the page (inline). Everything else downloads as an attachment, so an uploaded
 # HTML or SVG file can never run as a page on the box's own address.
-INLINE_TYPES = re.compile(r"^(image/(png|jpeg|gif|webp|avif|heic|heif|bmp)|audio/.+|video/.+|text/plain)$")
+# Doom WADs count as "playable" too: the Doom app streams them (browsers can't render the type).
+INLINE_TYPES = re.compile(r"^(image/(png|jpeg|gif|webp|avif|heic|heif|bmp)|audio/.+|video/.+|text/plain"
+                          r"|application/x-doom-wad)$")
+mimetypes.add_type("application/x-doom-wad", ".wad")
 
 
 def now():

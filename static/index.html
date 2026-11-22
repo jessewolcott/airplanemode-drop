@@ -208,7 +208,9 @@ function canPlayHere(it) {
   try { return document.createElement(k).canPlayType(it.type) !== ""; } catch { return false; }
 }
 function openerFor(it) {
-  if (!canPlayHere(it)) return null;
+  // audio/video only when this browser can play the format; other files (e.g. Doom WADs) by type
+  const k = kindOf(it);
+  if (it.kind !== "file" || ((k === "video" || k === "audio") && !canPlayHere(it))) return null;
   const a = openers.find(o => o.opens.types.some(p => typeMatch(p, it.type)));
   return a ? { name: a.name, url: ".." + a.opens.url.replace("{id}", encodeURIComponent(it.id)) } : null;
 }
@@ -232,7 +234,7 @@ function itemNode(it) {
       <span class="acts">${save}${copy}${ren}${move}<button type="button" data-pin></button>${lock}<button type="button" class="del" data-del>delete</button></span>
     </div>
     ${k === "text" ? `<pre>${linkify(it.text)}</pre>`
-      : open ? `<a class="play" href="${esc(open.url)}"><span class="tri">${PLAY_SVG}</span><span><b>Play in ${esc(open.name)}</b><small>${k === "video" ? "Full screen, picks up where you left off" : "With the rest of this folder"}</small></span></a>`
+      : open ? `<a class="play" href="${esc(open.url)}"><span class="tri">${PLAY_SVG}</span><span><b>Play in ${esc(open.name)}</b><small>${k === "video" ? "Full screen, picks up where you left off" : k === "audio" ? "With the rest of this folder" : "Opens it there"}</small></span></a>`
       : k === "image" ? `<a href="${url}" target="_blank"><img class="preview" src="${url}" alt="${esc(it.name)}" loading="lazy"${it.download ? "" : ' oncontextmenu="return false"'}></a>`
       : k === "video" ? `<video controls preload="metadata" playsinline src="${url}"${noSave}></video>`
       : k === "audio" ? `<audio controls preload="none" src="${url}"${noSave}></audio>` : ""}`;

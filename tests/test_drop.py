@@ -330,6 +330,29 @@ def test_downloads_off_admin_only_and_inherited():
         drop._admin_cache.clear()
 
 
+def test_doom_wads_stream_to_the_doom_app():
+    reset()
+    admins = {"a" * 32}
+    drop.ADMIN_URL, drop.check_admin_token = "http://admin.test", lambda t: t in admins
+    drop._admin_cache.clear()
+    try:
+        wad = ok(put("MyMod.WAD", b"PWAD" + b"\0" * 60))
+        assert wad["type"] == "application/x-doom-wad"
+        r = c.get(f"/api/files/{wad['id']}", headers={"Range": "bytes=0-3"})
+        assert r.status_code == 206 and r.content == b"PWAD"
+        assert r.headers["content-type"].startswith("application/x-doom-wad")
+        assert "sandbox" in r.headers["content-security-policy"]
+        # downloads off: the Doom app can still read it, saving a copy is refused
+        c.cookies.set("am_admin", "a" * 32)
+        ok(patch(wad["id"], nodownload=True))
+        c.cookies.clear()
+        assert c.get(f"/api/files/{wad['id']}").status_code == 200
+        assert c.get(f"/api/files/{wad['id']}", params={"dl": 1}).status_code == 403
+    finally:
+        c.cookies.clear()
+        drop.ADMIN_URL = ""
+
+
 def test_standalone_has_no_admin():
     reset()
     it = ok(put("x.mp4", b"x"))

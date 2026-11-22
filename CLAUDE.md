@@ -24,7 +24,9 @@ Inside the platform stack it's served at `/drop/` with the prefix stripped.
 - **Never build a path from client input.** Item ids must match `ID_RE` before touching disk.
 - **Only types in `INLINE_TYPES` are served inline.** Anything else is an attachment with
   `application/octet-stream`. Drop shares an origin with the platform's admin panel, so an
-  uploaded HTML/SVG file must never render as a page.
+  uploaded HTML/SVG file must never render as a page. `.wad` files get
+  `application/x-doom-wad` (a type browsers won't render) and count as inline so the Doom app
+  (`../airplanemode-doom`) can still stream them when downloads are off.
 - Changes need the `X-Drop: 1` header (blocks cross-site requests). There's no login by
   design: the hotspot password is the access control.
 - **Admin = the platform admin panel's session.** `is_admin()` forwards the `am_admin` cookie
