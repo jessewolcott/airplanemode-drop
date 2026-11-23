@@ -47,6 +47,14 @@ def test_page_uses_relative_urls():
     assert not re.search(r'(src|href)="(https?:|//|/[^/])', html), re.findall(r'(?:src|href)="[^"]*"', html)
 
 
+def test_page_has_home_button():
+    """App contract item 10: the AirplaneMode home button, back to the landing page."""
+    html = c.get("/").text
+    links = re.findall(r'<a class="am-home" href="([^"]*)" aria-label="AirplaneMode home"', html)
+    assert links and set(links) == {"../"}, links
+    assert 'class="home"' not in html and ">AirplaneMode</a>" not in html   # the old text link is gone
+
+
 def test_round_trip():
     reset()
     data = os.urandom(300 * K)

@@ -10,7 +10,10 @@ fails on any `fetch("/api/`, `src`/`href` starting with `http:`, `https:`, `//` 
 
 ## Layout (HTML, lines 113-148)
 
-- Header: title, `<a class="home" href="../">AirplaneMode</a>` (the landing page).
+- Header: title, then the **home button** at its right end: `<a class="am-home" href="../">`
+  with the house SVG and `aria-label="AirplaneMode home"` (the platform's app contract item 10;
+  it replaced the old "AirplaneMode" text link). 44 x 44 px, panel background, accent focus
+  ring, no transition under reduced motion. `main`'s padding uses `env(safe-area-inset-*)`.
 - `.send`: a `<label id="drop">` around a hidden `<input type=file multiple id=files>` (click
   or drag-and-drop), and `#textForm` (textarea `maxlength=65536`, "Share text").
 - `#uploads`: one progress row per queued file.
@@ -19,7 +22,8 @@ fails on any `fetch("/api/`, `src`/`href` starting with `http:`, `https:`, `//` 
 - `#items`: the list for the current folder.
 - Footer: `#foot` (who can see and delete, and the expiry), `#adminNote` (admin text or the
   sign-in link).
-- `<dialog id="moveDlg">`: the move picker.
+- `<dialog id="moveDlg">`: the move picker. Its `.dhead` row holds the title and a second
+  `a.am-home`, because a modal dialog makes the header's button unreachable.
 
 ## State (line 157)
 
@@ -142,6 +146,10 @@ Lock button states (`updateNode`): "downloads off" (the item itself), "off (fold
 - Cancel: before sending, it marks the job cancelled and removes the row. While sending, it
   calls `xhr.abort()` (the server sees `ClientDisconnect` and cleans up).
 - `beforeunload` warns while an upload is in progress.
+- **Leaving via the home button** (a document-level click handler on `a.am-home`) asks
+  `confirm()` first when uploads are running or queued, or the text box holds unshared text;
+  nothing else is lost by leaving (the list lives on the box, the folder is in the hash). On
+  "OK" it sets `leaving` so `beforeunload` doesn't ask a second time.
 
 ## "Play in <app>" (lines 197-216)
 

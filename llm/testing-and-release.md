@@ -25,6 +25,7 @@ uploads. `folder(name, parent)` and `patch(iid, **body)`.
 |---|---|
 | `test_sizes` | `parse_size`: g/K/decimal m/default/plain bytes |
 | `test_page_uses_relative_urls` | The page has `fetch("api/items"`, no `"/api/`, and no `src`/`href` that's external or root-relative |
+| `test_page_has_home_button` | Every `a.am-home` (header and move dialog) has `href="../"` and `aria-label="AirplaneMode home"`; the old "AirplaneMode" text link is gone |
 | `test_round_trip` | Upload 300 KB jpg -> name/size/type, GET returns the bytes, `accept-ranges`, inline `image/jpeg`; `?dl=1` -> attachment; listing, `used`, `free == cap - size`; `tmp/` is empty |
 | `test_dangerous_types_download_as_attachments` | `.html`, `.svg`, `.js` -> `application/octet-stream`, attachment, nosniff, sandbox CSP |
 | `test_range` | `bytes=100-199`, `0-1` (iOS), open-ended `102000-`, suffix `-10`, clamped end, unsatisfiable start -> 416 + `bytes */N`, HEAD length and empty body |

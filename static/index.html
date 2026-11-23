@@ -15,11 +15,15 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); }
-  main { max-width: 880px; margin: 0 auto; padding: 22px 16px 60px; }
+  main { max-width: 880px; margin: 0 auto; padding: max(22px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 60px max(16px, env(safe-area-inset-left)); }
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
   h1 { font-size: 1.35rem; margin: 0; } h1 span { color: var(--accent); }
-  a.home { color: var(--dim); font: .8rem var(--mono); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
-  a.home:hover { color: var(--ink); border-color: var(--dim); }
+  /* AirplaneMode home button (app contract item 10): top right of every screen */
+  a.am-home { flex: none; display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 10px;
+              color: var(--dim); background: var(--panel); border: 1px solid var(--line); text-decoration: none; transition: color .15s, border-color .15s; }
+  a.am-home:hover { color: var(--ink); border-color: var(--dim); }
+  a.am-home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { a.am-home { transition: none; } }
   .lead { color: var(--dim); margin: -8px 0 16px; font-size: .92rem; }
 
   .send { display: grid; gap: 12px; grid-template-columns: 1fr; }
@@ -102,7 +106,8 @@
 
   dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line2); border-radius: 12px; padding: 0; width: min(420px, calc(100vw - 32px)); }
   dialog::backdrop { background: #000a; }
-  dialog h3 { margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 1rem; }
+  dialog .dhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); }
+  dialog h3 { margin: 0; font-size: 1rem; min-width: 0; overflow-wrap: anywhere; }
   dialog .list { max-height: 50vh; overflow: auto; padding: 6px; }
   dialog .list button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--ink); font: .92rem var(--sans); padding: 9px 10px; border-radius: 7px; cursor: pointer; }
   dialog .list button:hover:not(:disabled) { background: var(--panel2); }
@@ -114,7 +119,12 @@
 <main>
   <header>
     <h1>Dr<span>o</span>p</h1>
-    <a class="home" href="../">AirplaneMode</a>
+    <a class="am-home" href="../" aria-label="AirplaneMode home" title="AirplaneMode home">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>
+      </svg>
+    </a>
   </header>
   <p class="lead">Send files and notes to every device on this hotspot. Nothing leaves the box.</p>
 
@@ -142,7 +152,15 @@
 </main>
 
 <dialog id="moveDlg">
-  <h3>Move "<span id="moveName"></span>" to…</h3>
+  <div class="dhead">
+    <h3>Move "<span id="moveName"></span>" to…</h3>
+    <a class="am-home" href="../" aria-label="AirplaneMode home" title="AirplaneMode home">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>
+      </svg>
+    </a>
+  </div>
   <div class="list" id="moveList"></div>
   <div class="foot"><button class="mini" type="button" id="moveCancel">cancel</button></div>
 </dialog>
@@ -378,6 +396,7 @@ function openMove(it) {
     return `<button type="button" data-to="${r.id}" ${off ? "disabled" : ""} style="padding-left:${10 + r.depth * 16}px">${r.id === "root" ? "" : "📁 "}${esc(r.label)}${current ? " (here now)" : ""}</button>`;
   }).join("");
   $("#moveDlg").showModal();
+  $("#moveList button:not(:disabled)")?.focus();   // not the home button that comes first
 }
 function descendantFolders(fid) { const out = []; const todo = [fid]; while (todo.length) { const id = todo.pop(); for (const f of info.items) if (f.kind === "folder" && f.parent === id) { out.push(f.id); todo.push(f.id); } } return out; }
 $("#moveList").addEventListener("click", async e => {
@@ -454,7 +473,18 @@ const drop = $("#drop");
 ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
 drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
-window.addEventListener("beforeunload", e => { if (sending) { e.preventDefault(); e.returnValue = ""; } });
+// Leaving loses what hasn't been sent yet: uploads in progress or queued, and typed text.
+let leaving = false;
+window.addEventListener("beforeunload", e => { if (sending && !leaving) { e.preventDefault(); e.returnValue = ""; } });
+document.addEventListener("click", e => {
+  const home = e.target.closest("a.am-home"); if (!home) return;
+  const ups = queue.filter(j => !j.cancelled).length + (sending ? 1 : 0);
+  const unsent = $("#text").value.trim() !== "";
+  if (!ups && !unsent) return;
+  const what = ups ? (ups === 1 ? "A file is still uploading" : `${ups} files are still uploading`) : "Your text hasn't been shared";
+  if (confirm(`${what}. Leave Drop anyway?${ups ? " The upload will stop." : ""}`)) leaving = true;
+  else e.preventDefault();
+});
 
 go();
 refresh();
