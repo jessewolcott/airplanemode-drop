@@ -46,4 +46,4 @@ Inside the platform stack it's served at `/drop/` with the prefix stripped.
 ## Releasing
 
 Push a `vX.Y.Z` tag. CI tests, then publishes `ghcr.io/jessewolcott/airplanemode-drop:X.Y.Z`
-(arm64 + amd64). **Ask Jesse before pushing a release tag.** Released: 0.1.0, 0.2.0 (folders, downloads off, Play in Cinema), 0.2.1 (Doom WADs, Play in Doom).
+(arm64 + amd64). **Ask Jesse before pushing a release tag.** Released: 0.1.0, 0.2.0 (folders, downloads off, Play in Cinema), 0.2.1 (Doom WADs, Play in Doom), 0.2.2 (home button).
