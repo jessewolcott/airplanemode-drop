@@ -22,14 +22,14 @@ Backend-to-backend callers on the internal Docker network: Cinema and QuickShot 
 
 ## One process, in-memory state
 
-- `store = Store()` (`app.py:200`) is a module-level singleton holding `items` (a list of
+- `store = Store()` (`app.py:241`) is a module-level singleton holding `items` (a list of
   dicts), `version` (an int), `reserved` (upload id -> bytes) and an `asyncio.Lock`.
 - **The design assumes exactly one uvicorn worker.** The Dockerfile's `CMD` starts uvicorn
   without `--workers` (`Dockerfile:11`). Several workers would each have their own `store`,
   overwrite each other's `items.json`, and disagree about reservations and `version`.
 - All handlers are `async`. Blocking work is pushed off the event loop where it matters:
   file I/O through `anyio.open_file` (uploads/downloads), the admin-service HTTP call through
-  `anyio.to_thread.run_sync` (`app.py:250`). `store.save()` (a small JSON write) and
+  `anyio.to_thread.run_sync` (`app.py:291`). `store.save()` (a small JSON write) and
   `shutil.disk_usage` run inline, which is fine at this size.
 - Mutations run under `async with store.lock`. Because asyncio is single-threaded, code
   between two `await`s is atomic anyway. That matters for the upload space check, see
@@ -37,19 +37,19 @@ Backend-to-backend callers on the internal Docker network: Cinema and QuickShot 
 
 ## Startup and background work
 
-`lifespan()` (`app.py:213-219`):
+`lifespan()` (`app.py:254-260`):
 
 1. `store.load()`: creates `/data/files` and `/data/tmp`, deletes everything in `tmp`, reads
    `items.json`, migrates and cleans up (see [data-model.md](data-model.md#load-migration-and-cleanup)).
 2. `store.sweep()`: deletes expired items right away.
-3. Starts `_sweep_forever()` (`app.py:203-210`): every 600 s, takes the lock and sweeps.
+3. Starts `_sweep_forever()` (`app.py:244-251`): every 600 s, takes the lock and sweeps.
    Exceptions are logged and swallowed. Cancelled on shutdown.
 
-A sweep also runs (under the lock) at the start of every `GET /api/items` (`app.py:275-276`).
+A sweep also runs (under the lock) at the start of every `GET /api/items` (`app.py:316-317`).
 The page polls that every 4 s, and Cinema/QuickShot call it too, so expiry is effectively
 immediate whenever anyone is looking.
 
-`FastAPI(docs_url=None, redoc_url=None, openapi_url=None, ...)` (`app.py:222`): no Swagger,
+`FastAPI(docs_url=None, redoc_url=None, openapi_url=None, ...)` (`app.py:263`): no Swagger,
 no OpenAPI JSON.
 
 ## Configuration (environment)
@@ -95,10 +95,10 @@ Text snippets and folders have no file on disk. A text's content is stored inlin
 ## Memory budget (limit 128 MB: `app.yaml`, `compose.yaml`, platform `DROP_MEM`)
 
 - Uploads: `request.stream()` chunks are appended to a `bytearray` and flushed to disk each
-  time it reaches `CHUNK` (1 MiB) (`app.py:379-395`). Peak extra memory is about 1 MiB plus
+  time it reaches `CHUNK` (1 MiB) (`app.py:420-436`). Peak extra memory is about 1 MiB plus
   one incoming chunk. The README says a 700 MB upload peaks around 36 MB RSS for the whole
   process.
-- Downloads: an async generator reads `min(256 KiB, remaining)` at a time (`app.py:345-354`).
+- Downloads: an async generator reads `min(256 KiB, remaining)` at a time (`app.py:386-395`).
 - Metadata: the whole item list is in memory and re-serialised on every save. That's fine for
   hundreds or thousands of items. Text items can each carry up to 64 KiB inline, so many large
   texts make `items.json` and every save bigger.

@@ -37,6 +37,7 @@ uploads. `folder(name, parent)` and `patch(iid, **body)`.
 | `test_expiry_and_pin` | Backdated 8 days: only the pinned file survives, files unlinked, text expired. Unpinning -> gone on the next listing |
 | `test_delete_and_header` | No `X-Drop` -> 403 on PUT/DELETE/POST; delete unlinks the file and bumps `version`; deleting again -> 404 |
 | `test_restart_keeps_items_and_cleans_up` | `load()` keeps items, empties tmp, deletes unknown files |
+| `test_unreadable_metadata_never_deletes_files` | Corrupt `items.json` -> kept as one `items.json.bad-*`, both files survive as pinned recovered items (mp4 sniffed as `video/mp4` with `.mp4`, the other `application/octet-stream`), a fresh `items.json` is written; a missing `items.json` recovers the same way |
 | `test_folders_move_and_delete` | Nested folders, upload/text into folders, parent = file -> 400, unknown -> 404 (before reading the body), move to root and back plus rename, cycle guards, depth limit (8), recursive delete count |
 | `test_keep_on_a_folder_keeps_whats_inside` | Pinned folder keeps a child 30 days old (`kept` true, `pinned` false). The folder itself never expires. An outside item expires |
 | `test_downloads_off_admin_only_and_inherited` | Fakes `ADMIN_URL` + `check_admin_token`. Non-admin, wrong token and malformed cookie can't set `nodownload`. The admin sets it on a folder -> child `download:false`, `blocked_by`. A non-admin can stream with Range, gets 403 on `?dl=1` and on an attachment-only `.zip`. Moving out unblocks it. The admin can still `?dl=1`. Turning it back on. Admin answers cached (one call for 3 listings) |
@@ -45,8 +46,7 @@ uploads. `folder(name, parent)` and `patch(iid, **body)`.
 | `test_old_items_get_folder_fields` | 0.1-style data (no `nodownload`, a dangling `parent`) -> `load()` sets `parent: None`, `nodownload: False` |
 
 Not covered by tests: the page's JS behaviour (keyed rendering, move dialog, uploads queue),
-the real `_ask_admin_service` HTTP call, concurrent uploads, the periodic sweeper, and a
-corrupt `items.json`. Check UI changes by hand in the platform dev stack
+the real `_ask_admin_service` HTTP call, concurrent uploads and the periodic sweeper. Check UI changes by hand in the platform dev stack
 (http://localhost:8080/drop/, admin password `dev`) so "Play in Cinema" and the admin show up.
 Retake `docs/screenshots/` when the UI changes. Nothing has been tested on real hardware yet
 (mark such things *untested*).
@@ -89,5 +89,5 @@ Triggers: push to `main`, push of a `v*` tag, and pull requests. Permissions: `c
 4. In `../airplanemode`: bump the pinned tag in `compose.yaml` (never `latest`/`main`), and
    update `portal/apps.json` / `Caddyfile` / `hardware/*.env` if anything changed.
 
-Version state (2026-11-22): released 0.1.0, 0.2.0 (folders, downloads off, Play in Cinema)
-and 0.2.1 (Doom WADs, Play in Doom); the platform pins `airplanemode-drop:0.2.1`.
+Version state (2026-11-22): released 0.1.0, 0.2.0 (folders, downloads off, Play in Cinema),
+0.2.1 (Doom WADs, Play in Doom) and 0.2.2 (home button); the platform pins `airplanemode-drop:0.2.2`.

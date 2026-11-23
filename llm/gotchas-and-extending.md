@@ -4,9 +4,10 @@
 
 **Data and expiry**
 
-- **A corrupt or unreadable `items.json` deletes all stored files at the next start.**
-  `load()` falls back to an empty list, and its orphan cleanup then unlinks every file in
-  `/data/files` (`app.py:96-114`). Never hand-edit it on a live box without validating the JSON.
+- **A corrupt or missing `items.json` doesn't delete files, but loses their metadata.**
+  `load()` keeps the bad file as `items.json.bad-<time>` and brings every stored file back as
+  a pinned `recovered-...` item at the top (`app.py:116-145`). Names, folders and settings are
+  gone. Validate the JSON before hand-editing it on a live box.
 - **Unpinning, or moving something out of a pinned folder, can delete it within seconds.**
   `created` never changes, so anything older than `KEEP_DAYS` goes on the next
   `GET /api/items` (the page polls every 4 s).
@@ -75,13 +76,13 @@
 
 ### Add a stored item field
 
-1. Add it to all three constructors: upload (`app.py:399-400`), text (`433-434`), folder (`455-456`).
+1. Add it to all three constructors: upload (`app.py:440-441`), text (`433-434`), folder (`455-456`).
 2. Migrate old data in `load()` with `i.setdefault("field", default)` (next to `nodownload`,
-   `app.py:108-111`).
-3. If clients can change it, add it to `Change` (`app.py:462-465`) and handle it in `change()`.
+   `app.py:147-150`).
+3. If clients can change it, add it to `Change` (`app.py:503-506`) and handle it in `change()`.
    Decide whether it's admin-only (check `is_admin` before taking the lock, like `nodownload`).
 4. If it should inherit down folders, write a helper like `kept()`/`blocked()` over `chain()`,
-   and expose a derived field in `items()` (`app.py:279-282`), computing `ids = store.by_id()`
+   and expose a derived field in `items()` (`app.py:320-323`), computing `ids = store.by_id()`
    once.
 5. Add a test (and a 0.1-style/old-data case if you migrate). Additions are safe for Cinema and
    QuickShot. Don't rename or retype the fields they use (see [integration.md](integration.md#compatibility-rules-what-not-to-break)).
@@ -96,7 +97,7 @@
 
 ### Serve another type inline
 
-- Add it to `INLINE_TYPES` (`app.py:76`) **only if browsers can't execute it as a document**
+- Add it to `INLINE_TYPES` (`app.py:77`) **only if browsers can't execute it as a document**
   (never HTML, SVG, XML, XHTML or PDF). Keep `nosniff` and the sandbox CSP.
 - Update `kindOf()` in the page if it should get a preview, and extend
   `test_dangerous_types_download_as_attachments` or `test_round_trip`.

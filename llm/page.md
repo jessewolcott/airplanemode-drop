@@ -8,7 +8,7 @@ assets (the favicon is a `data:` SVG). Dark theme only (`color-scheme: dark`). I
 The page lives at `/drop/` on the box and at `/` standalone. `test_page_uses_relative_urls`
 fails on any `fetch("/api/`, `src`/`href` starting with `http:`, `https:`, `//` or a single `/`.
 
-## Layout (HTML, lines 113-148)
+## Layout (HTML, lines 118-166)
 
 - Header: title, then the **home button** at its right end: `<a class="am-home" href="../">`
   with the house SVG and `aria-label="AirplaneMode home"` (the platform's app contract item 10;
@@ -25,7 +25,7 @@ fails on any `fetch("/api/`, `src`/`href` starting with `http:`, `https:`, `//` 
 - `<dialog id="moveDlg">`: the move picker. Its `.dhead` row holds the title and a second
   `a.am-home`, because a modal dialog makes the header's button unreachable.
 
-## State (line 157)
+## State (line 175)
 
 ```js
 let info = null,        // last GET api/items response
@@ -33,10 +33,10 @@ let info = null,        // last GET api/items response
     byId = new Map(),   // id -> item, rebuilt in render()
     here = null,        // current folder id (null = top)
     openers = [];       // apps that can play Drop files (from ../api/apps)
-const H = { "X-Drop": "1" }, JH = { ...H, "Content-Type": "application/json" };   // lines 153-154
+const H = { "X-Drop": "1" }, JH = { ...H, "Content-Type": "application/json" };   // lines 171-172
 ```
 
-## Polling and refresh (lines 307-314, 457-459)
+## Polling and refresh (lines 327-334, 489-491)
 
 - On load: `go()` (reads the hash), `refresh()`, then `setInterval(refresh, 4000)`.
 - `refresh()` fetches `api/items` (`cache: "no-store"`). It does a **full `render()`** only
@@ -46,7 +46,7 @@ const H = { "X-Drop": "1" }, JH = { ...H, "Content-Type": "application/json" }; 
 - After each action (delete, pin, lock, rename, move, new folder, text, finished upload) the
   page calls `refresh()` straight away.
 
-## Folder navigation: `#f=<id>` (lines 189-195, 273-278, 315-320)
+## Folder navigation: `#f=<id>` (lines 207-213, 293-298, 335-340)
 
 - The current folder is in the URL hash: `#f=<16 hex>`. `go()` parses it with
   `/^#f=([0-9a-f]{16})$/`. Anything else means the top. It's bound to `hashchange`, so
@@ -61,13 +61,13 @@ const H = { "X-Drop": "1" }, JH = { ...H, "Content-Type": "application/json" }; 
 - Breadcrumbs: "On the box" (a link to `#` when inside a folder), then each ancestor as
   `#f=<id>`, and the current folder in bold. The drop zone title becomes "Send files to <folder>".
 
-## Keyed rendering (lines 216-306)
+## Keyed rendering (lines 236-326)
 
 The list refreshes every 4 s, but a `<video>` that's playing must not be destroyed. So nodes
 are **keyed by item id** and rebuilt only when their markup would change:
 
 - Each `<article class="item">` has `data-id` and `data-sig`.
-- `sig(it)` (line 244) = `[name, download, info.admin, openers.length, folder ? hasOtherFolders(it) : 1].join("|")`:
+- `sig(it)` (line 264) = `[name, download, info.admin, openers.length, folder ? hasOtherFolders(it) : 1].join("|")`:
   everything that changes the static markup (title, save button, lock button, play button vs
   inline player, move button).
 - `render()`:
@@ -81,7 +81,7 @@ are **keyed by item id** and rebuilt only when their markup would change:
   4. Removes nodes that are no longer in this folder. An empty folder or top shows an `.empty`
      message instead.
   5. Updates the space bar, usage, limits text, footer and admin note.
-- `itemNode(it)` (lines 217-242) builds the static markup:
+- `itemNode(it)` (lines 237-262) builds the static markup:
   - Icon: folder SVG, `TXT`, or the file extension (`ext()`, up to 5 chars, uppercased).
   - Actions: **save** (`api/files/<id>?dl=1` with `download`, only for files when
     `it.download || info.admin`), **copy** (texts), **rename** (folders only), **move** (non-folders
@@ -94,16 +94,16 @@ are **keyed by item id** and rebuilt only when their markup would change:
     `controlslist="nodownload" oncontextmenu="return false"` and images get `oncontextmenu`.
   - The name is set with `textContent` (no HTML injection). Everything interpolated into HTML
     goes through `esc()`.
-- `updateNode(el, it)` (lines 246-272) updates the dynamic bits in place: the `kept` border, the
+- `updateNode(el, it)` (lines 266-292) updates the dynamic bits in place: the `kept` border, the
   subtitle (folder: "N items · size · everything kept"; others: "size|text · age · goes in N d
   / kept / kept by its folder"), the amber **no downloads** badge (its tooltip names the
   blocking folder via `blocked_by`), the keep button's text/state/tooltip, and the lock
   button's state.
-- `kindOf(it)` (lines 172-179): `image` only for `png|jpeg|gif|webp|avif|bmp`. That's narrower
+- `kindOf(it)` (lines 190-197): `image` only for `png|jpeg|gif|webp|avif|bmp`. That's narrower
   than the server's `INLINE_TYPES`, which also has `heic|heif`, so HEIC shows as a plain file
   card. Then `video/*`, `audio/*`, else `file`.
 
-## Actions (one delegated click handler on `#items`, lines 328-354)
+## Actions (one delegated click handler on `#items`, lines 348-374)
 
 `call(url, opts)` shows `alert(detail || "Failed (<status>)")` on a non-2xx response.
 
@@ -120,7 +120,7 @@ are **keyed by item id** and rebuilt only when their markup would change:
 Lock button states (`updateNode`): "downloads off" (the item itself), "off (folder)"
 (**disabled**, inherited, with a tooltip that names the folder), or "downloads on".
 
-## Move dialog (lines 362-386)
+## Move dialog (lines 382-407)
 
 - `openMove(it)` lists "On the box (top)" (`data-to="root"`) and every folder as a tree
   (depth-first, siblings sorted naturally, indented 16 px per level, with a folder emoji).
@@ -129,7 +129,7 @@ Lock button states (`updateNode`): "downloads off" (the item itself), "off (fold
   cycle guard. The depth limit isn't pre-checked: the server's 400 shows as an alert.
 - Picking a row closes the dialog and sends `PATCH api/items/<id> {parent: "<id>"|"root"}`.
 
-## Uploads queue (lines 401-455)
+## Uploads queue (lines 422-478)
 
 - `addFiles(list)` (from the file input or a drop event) creates a `.up` row per file and a job
   `{f, row, xhr, cancelled, parent: here}`. **The target folder is captured when queued**, so
@@ -151,7 +151,7 @@ Lock button states (`updateNode`): "downloads off" (the item itself), "off (fold
   nothing else is lost by leaving (the list lives on the box, the folder is in the hash). On
   "OK" it sets `leaving` so `beforeunload` doesn't ask a second time.
 
-## "Play in <app>" (lines 197-216)
+## "Play in <app>" (lines 215-236)
 
 1. At startup: `fetch("../api/apps")` (the platform's list of apps the admin hasn't hidden).
    It keeps entries with `opens.from === "drop"`, an array `opens.types`, and `opens.url`

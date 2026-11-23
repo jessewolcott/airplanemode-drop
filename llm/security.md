@@ -20,7 +20,7 @@ recording a stream.
 
 - Every state-changing endpoint (`PUT /api/files`, `POST /api/texts`, `POST /api/folders`,
   `PATCH/DELETE /api/items/{id}`, `POST /api/items/{id}/pin`) calls `need_header()`
-  (`app.py:225-227`), which requires `X-Drop: 1` exactly, or returns 403.
+  (`app.py:266-268`), which requires `X-Drop: 1` exactly, or returns 403.
 - Why it works: a cross-site page can only send a custom request header with `fetch`/XHR,
   which triggers a CORS preflight (`OPTIONS`). Drop has no CORS middleware and never answers a
   preflight with `Access-Control-Allow-*`, so the browser never sends the real request. HTML
@@ -38,9 +38,9 @@ Drop shares an origin (`http://<box>/`) with the admin panel (`/admin/`, whose `
 cookie has `path=/`). If an uploaded `evil.html` or `evil.svg` rendered as a page at
 `/drop/api/files/<id>`, its script would run with the admin panel's origin: it could call
 admin APIs with the admin's cookie (and send `X-AirplaneMode: 1`, since it's same-origin).
-Drop therefore layers several defences in `download()` (`app.py:312-356`):
+Drop therefore layers several defences in `download()` (`app.py:353-397`):
 
-1. **Allow-list of inline types** (`INLINE_TYPES`, `app.py:76`):
+1. **Allow-list of inline types** (`INLINE_TYPES`, `app.py:77`):
    `image/(png|jpeg|gif|webp|avif|heic|heif|bmp)`, `audio/*`, `video/*`, `text/plain`, and
    `application/x-doom-wad` (a type no browser renders; on the list so the Doom app can stream
    WADs when downloads are off). Only
@@ -68,7 +68,7 @@ Text snippets are rendered by the page with `esc()` + `linkify()` (links get
 
 - Files are stored as `/data/files/<id>` where `id = secrets.token_hex(8)`, generated
   server-side. The client's name is metadata only.
-- `clean_name()` (`app.py:257-262`): NFC-normalise, keep only the last component after any
+- `clean_name()` (`app.py:298-303`): NFC-normalise, keep only the last component after any
   `/` or `\`, remove every Unicode control/format/unassigned character (category `C*`, which
   includes `\0`, `\n`, bidi overrides), strip whitespace and leading/trailing dots, cut to 200
   chars, and fall back to `"file"` if nothing is left. Examples from `test_names_are_never_paths`:
@@ -99,20 +99,20 @@ There's no Drop password. "Admin" = whoever is signed in to the AirplaneMode adm
   `secrets.token_urlsafe(32)` (43 chars of `[A-Za-z0-9_-]`) with `httponly`,
   `samesite=strict`, `path=/`. Drop is on the same host, so the browser sends that cookie to
   `/drop/...` too.
-- `is_admin(request)` (`app.py:243-254`):
+- `is_admin(request)` (`app.py:284-295`):
   1. `token = cookies["am_admin"]`. If `ADMIN_URL` is empty (standalone) or the token doesn't
      match `TOKEN_RE` (`^[A-Za-z0-9_-]{16,128}$`) -> `False` and **no network call**. The
      format check stops header injection or junk being forwarded (`"bad token; x=1"` is tested).
   2. Cache lookup: `_admin_cache[token] = (answer, expires_at)`. A hit within **30 s** returns
      the cached answer. **Negative answers are cached too.**
   3. Otherwise `check_admin_token(token)` in a worker thread. By default that's
-     `_ask_admin_service` (`app.py:230-236`): `GET {ADMIN_URL}/api/admin/session` with only
+     `_ask_admin_service` (`app.py:271-277`): `GET {ADMIN_URL}/api/admin/session` with only
      `Cookie: am_admin=<token>`, 3 s timeout. `True` only on HTTP 200. Any error (401,
      timeout, admin service down) -> `False`.
   4. If the cache has more than 256 entries it's cleared wholesale, then the answer is stored.
 - The admin service's `/api/admin/session` is a GET behind `require_admin` (a live, unexpired
   session): 200 `{"ok": true}`, otherwise 401. GETs don't need its `X-AirplaneMode` header.
-- `check_admin_token` is a module attribute so tests can swap it (`app.py:239`).
+- `check_admin_token` is a module attribute so tests can swap it (`app.py:280`).
 - Consequences: after signing out of the admin panel, Drop may still treat that browser as
   admin for up to 30 s. If the admin service is down, nobody is admin (fail closed). Restarting
   the admin service signs everyone out (its sessions are in memory).

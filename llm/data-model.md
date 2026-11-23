@@ -7,9 +7,9 @@ Everything Drop holds is an **item**: a plain dict in `store.items`, persisted a
 
 | `kind` | Has a file on disk? | Created by | Extra fields |
 |---|---|---|---|
-| `"file"` | yes, `/data/files/<id>` | `PUT /api/files` (`app.py:399-400`) | none |
-| `"text"` | no (content inline) | `POST /api/texts` (`app.py:433-434`) | `text` |
-| `"folder"` | no | `POST /api/folders` (`app.py:455-456`) | none |
+| `"file"` | yes, `/data/files/<id>` | `PUT /api/files` (`app.py:440-441`) | none |
+| `"text"` | no (content inline) | `POST /api/texts` (`app.py:474-475`) | `text` |
+| `"folder"` | no | `POST /api/folders` (`app.py:496-497`) | none |
 
 ### Stored fields (what's in `items.json`)
 
@@ -26,7 +26,7 @@ Everything Drop holds is an **item**: a plain dict in `store.items`, persisted a
 | `parent` | str or null | x | x | x | Id of the containing folder, or `null` for the top ("On the box"). |
 | `text` | str | | x | | The snippet, stripped, max 64 KiB UTF-8. |
 
-### Derived fields (only in `GET /api/items` responses, `app.py:279-282`)
+### Derived fields (only in `GET /api/items` responses, `app.py:320-323`)
 
 | Field | Meaning |
 |---|---|
@@ -39,7 +39,7 @@ endpoints return the **stored** dict, without derived fields.
 
 ## `items.json` and atomic saves
 
-`Store.save()` (`app.py:117-121`):
+`Store.save()` (`app.py:158-162`):
 
 ```python
 tmp = META.with_suffix(".tmp")            # /data/items.tmp
@@ -64,7 +64,7 @@ upload is appended when it finishes). `GET /api/items` sorts by `-created` (newe
 page re-sorts per folder: folders first (by name, natural/numeric), then everything else in
 API order (newest first).
 
-## `Store` methods (`app.py:84-197`)
+## `Store` methods (`app.py:104-238`)
 
 | Method | What it does |
 |---|---|
@@ -85,42 +85,49 @@ API order (newest first).
 
 ### Depth arithmetic
 
-- Creating a folder: refused if `depth(parent) >= MAX_DEPTH` (`app.py:453`). The top has depth
+- Creating a folder: refused if `depth(parent) >= MAX_DEPTH` (`app.py:494`). The top has depth
   0, so the deepest folder has depth 8: `MAX_DEPTH` folders nested. The test creates
-  Movies + 7 more (depth 8), and a 9th is refused (`tests/test_drop.py:231-234`).
-- Moving folder `F` into `T` (`app.py:479-485`): `extra` = how far F's deepest subfolder is
+  Movies + 7 more (depth 8), and a 9th is refused (`tests/test_drop.py:263-266`).
+- Moving folder `F` into `T` (`app.py:520-526`): `extra` = how far F's deepest subfolder is
   below F (`max(depth(d) - depth(F))` over F's descendant folders, or 0). Refused if
   `depth(T) + 1 + extra > MAX_DEPTH`. Moving to the top (`target is None`) skips all checks.
 - Cycle guard: refuse if `T == F` or `T` is one of F's descendant folders.
 - Files and texts can be moved anywhere. Depth only limits folders.
 
-## `load()`: migration and cleanup (`app.py:91-115`)
+## `load()`: migration and cleanup (`app.py:111-156`)
 
 In order:
 
 1. `mkdir -p` `files/` and `tmp/`.
 2. **Delete every file in `tmp/`.** Partial uploads can't survive a restart.
-3. Read `items.json` -> `["items"]`. `FileNotFoundError` -> empty. **Any other error** (bad
-   JSON, missing `"items"` key...) -> logs a warning and starts empty.
+3. Read `items.json` -> `["items"]`. `FileNotFoundError` -> empty, and **recovering**. Any
+   other error (bad JSON, missing `"items"` key...) -> the file is renamed to
+   `items.json.bad-<unix time>`, a warning is logged, empty list, and **recovering**.
 4. `known` = ids from the JSON, taken **before** the next step.
 5. Drop `kind=="file"` entries whose `/data/files/<id>` is missing.
 6. Migration from 0.1 (which had no folders): `setdefault("nodownload", False)` on every item.
    Any `parent` that isn't the id of a surviving folder (missing key, `null`, or a folder
    that's gone) becomes `None`. Orphans move to the top; nothing is deleted for having a bad
    parent. `pinned` isn't defaulted: it existed in 0.1.
-7. Delete files in `files/` whose name isn't in `known` (files with no metadata).
-8. `version = 1`.
+   When recovering, every file in `files/` with a valid id that isn't in `known` comes back
+   as a kept item: `name` `recovered-<first 6 id chars><ext>`, `type` sniffed from its first
+   bytes (`sniff`/`MAGIC`, `app.py:87-101`: mp4, webm, mp3, jpeg, png, gif, pdf, ogg; else
+   `application/octet-stream` with no extension), size and `created` from the file,
+   `pinned: true`, `nodownload: false`, `parent: None`. These ids are added to `known`.
+7. Delete files in `files/` whose name isn't in `known` (files with no metadata). After a
+   recovery nothing is left to delete, so a bad or missing `items.json` never wipes files.
+8. `version = 1`; if anything was recovered, `save()` writes a fresh `items.json`.
 
 The migrated values are only written back to disk on the next `save()`.
 
-> Gotcha: with an unreadable `items.json`, step 7 treats **every** stored file as unknown and
-> deletes it. Atomic saves make a corrupt file unlikely, but never hand-edit `items.json` on a
-> live box without validating the JSON first.
+> Recovered files lose their names, folders and keep/download settings (they come back
+> pinned, at the top). Validate the JSON before hand-editing `items.json` on a live box.
 
-The test `test_restart_keeps_items_and_cleans_up` covers steps 2, 5 and 7, and
-`test_old_items_get_folder_fields` covers step 6.
+The test `test_restart_keeps_items_and_cleans_up` covers steps 2, 5 and 7,
+`test_old_items_get_folder_fields` covers step 6, and
+`test_unreadable_metadata_never_deletes_files` covers recovery (corrupt and missing file).
 
-## Expiry: `sweep()` (`app.py:182-197`)
+## Expiry: `sweep()` (`app.py:223-238`)
 
 - `cutoff = now() - KEEP_DAYS * 86400`.
 - Removes every item where `kind != "folder"`, `created < cutoff` and `not kept(item)`.

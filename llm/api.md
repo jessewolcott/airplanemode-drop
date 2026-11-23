@@ -7,10 +7,10 @@ uses relative URLs (`api/items`).
 ## Conventions
 
 - **Errors** are JSON `{"detail": "<human sentence>"}` with the status code. The custom handler
-  for `HTTPException` is at `app.py:522-524`. Request-body validation failures (wrong JSON
+  for `HTTPException` is at `app.py:563-565`. Request-body validation failures (wrong JSON
   types, a missing required field) come from FastAPI's default handler as **422** with
   `{"detail": [ {loc, msg, type, ...}, ... ]}`, a list rather than a string.
-- **Changes need `X-Drop: 1`** (`need_header`, `app.py:225-227`). Without it: **403**
+- **Changes need `X-Drop: 1`** (`need_header`, `app.py:266-268`). Without it: **403**
   `"Missing request header."`. FastAPI parses and validates the body *before* the handler
   runs, so a request with a bad body and no header gets 422, not 403. See
   [security.md](security.md#the-x-drop-header-csrf-defence).
@@ -36,7 +36,7 @@ uses relative URLs (`api/items`).
 
 ---
 
-## `GET /api/items` (`app.py:273-286`)
+## `GET /api/items` (`app.py:314-327`)
 
 1. Takes the lock and runs `store.sweep()` (expired items vanish here).
 2. Builds the list sorted newest first, each item = stored fields + `kept`, `download`,
@@ -66,7 +66,7 @@ their full `text`, so this response can be large if people paste a lot.
 
 ---
 
-## `PUT /api/files?name=<name>&parent=<folder id>` (upload) (`app.py:360-416`)
+## `PUT /api/files?name=<name>&parent=<folder id>` (upload) (`app.py:401-457`)
 
 The request body **is** the file (no multipart). The page sends a `File` object through XHR.
 Content-Length is usually set. Chunked bodies without a length are supported too.
@@ -76,7 +76,7 @@ Order of operations:
 1. `need_header`. 403 without `X-Drop: 1`.
 2. `name = clean_name(name)` (default `"file"`). See [security.md](security.md#names-are-never-paths).
 3. `store.folder(parent)`: **fails before reading any of the body** (400/404). Tested at
-   `tests/test_drop.py:222-223`.
+   `tests/test_drop.py:254-255`.
 4. If `Content-Length` is present and all digits (`declared`):
    - `declared > MAX_FILE` -> **413** `"<name> is <size>; the limit per file is <limit>."`
    - `declared > store.free()` -> **413** `"Not enough space for <name> (<size>): <free> free. Delete something first."`
@@ -114,7 +114,7 @@ reservation grows chunk by chunk and the limit is enforced as data arrives
 
 ---
 
-## `GET|HEAD /api/files/{id}` (`app.py:312-356`)
+## `GET|HEAD /api/files/{id}` (`app.py:353-397`)
 
 Query: `dl` (bool, default false). `?dl=1` asks for a download (attachment).
 
@@ -127,12 +127,12 @@ Query: `dl` (bool, default false). `?dl=1` asks for a download (attachment).
    Inline requests (streaming) are never blocked. See [security.md](security.md#downloads-off-what-is-and-isnt-blocked).
 5. Headers on every success, and on 416:
    - `Accept-Ranges: bytes`
-   - `Content-Disposition: inline|attachment; filename="<ascii fallback>"; filename*=UTF-8''<percent-encoded>` (`content_disposition()`, `app.py:289-291`; non-ASCII and `" \ ;` become `_` in the fallback)
+   - `Content-Disposition: inline|attachment; filename="<ascii fallback>"; filename*=UTF-8''<percent-encoded>` (`content_disposition()`, `app.py:330-332`; non-ASCII and `" \ ;` become `_` in the fallback)
    - `X-Content-Type-Options: nosniff`
    - `Content-Security-Policy: sandbox; default-src 'none'; img-src 'self'; media-src 'self'`
    - `Cache-Control: private, max-age=3600`
    - `Content-Type`: the stored type when inline, otherwise `application/octet-stream`.
-6. Range (`parse_range()`, `app.py:294-309`). Only a single `bytes=` range:
+6. Range (`parse_range()`, `app.py:335-350`). Only a single `bytes=` range:
    - No header -> whole file, **200**.
    - `bytes=a-b` -> `[a, min(b, size-1)]` (an end past EOF is clamped).
    - `bytes=a-` -> `[a, size-1]`.
@@ -152,7 +152,7 @@ and seeking in `<video>`/Cinema relies on it. Tested in `test_range`.
 
 ---
 
-## `POST /api/texts` (`app.py:419-439`)
+## `POST /api/texts` (`app.py:460-480`)
 
 Body: `{"text": str, "parent": str|null}`.
 
@@ -164,7 +164,7 @@ Body: `{"text": str, "parent": str|null}`.
 - Under the lock: `parent = store.folder(body.parent)`, append, save. Returns the item.
 - Text doesn't count against file space (`test_text_items`).
 
-## `POST /api/folders` (`app.py:442-459`)
+## `POST /api/folders` (`app.py:483-500`)
 
 Body: `{"name": str, "parent": str|null}`.
 
@@ -174,7 +174,7 @@ Body: `{"name": str, "parent": str|null}`.
 - Folder item: `size 0`, `type ""`. Returns it.
 - Duplicate names are allowed (nothing enforces uniqueness).
 
-## `PATCH /api/items/{id}` (`app.py:462-490`)
+## `PATCH /api/items/{id}` (`app.py:503-531`)
 
 Body (all optional): `{"name": str, "parent": str, "nodownload": bool}`.
 
@@ -196,19 +196,19 @@ Partial failure: fields are applied in order on the live dict. If `name` was set
 `parent` check raises 400, the in-memory rename has already happened but wasn't saved. It will
 be written by the next save. Hard to hit from the page, which sends one field at a time.
 
-## `POST /api/items/{id}/pin` (`app.py:493-504`)
+## `POST /api/items/{id}/pin` (`app.py:534-545`)
 
 Body: `{"pinned": bool}`. Anyone may pin. Sets `pinned`, saves, returns the item. On a folder it
 keeps everything below it (inherited at sweep time; children's own `pinned` is untouched).
 
-## `DELETE /api/items/{id}` (`app.py:507-519`)
+## `DELETE /api/items/{id}` (`app.py:548-560`)
 
 Under the lock: the item plus, for folders, `store.descendants(id)` (everything at any depth)
 are removed from the list and saved, **then** their files are unlinked. Returns
 `{"ok": true, "deleted": <count>}`. 404 if it's already gone. Anyone may delete. There's no
 trash or undo.
 
-## `GET /` (`app.py:527-529`)
+## `GET /` (`app.py:568-570`)
 
 `FileResponse(static/index.html)` with `Cache-Control: no-cache`, so a new image's page
 shows up straight away.
