@@ -94,4 +94,4 @@ Triggers: push to `main`, push of a `v*` tag, and pull requests. Permissions: `c
    update `portal/apps.json` / `Caddyfile` / `hardware/*.env` if anything changed.
 
 Version state (2026-11-22): released 0.1.0, 0.2.0 (folders, downloads off, Play in Cinema),
-0.2.1 (Doom WADs, Play in Doom), 0.2.2 (home button) and 0.2.3 (Caddy sends file bytes); the platform pins `airplanemode-drop:0.2.3`.
+0.2.1 (Doom WADs, Play in Doom), 0.2.2 (home button), 0.2.3 (Caddy sends file bytes) and 0.3.0 (read-only for non-admins); the platform pins `airplanemode-drop:0.3.0`.
