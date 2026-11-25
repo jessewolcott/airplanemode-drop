@@ -100,6 +100,9 @@
               font: .9rem/1.45 var(--sans); max-height: 240px; overflow: auto; }
   .item pre a { color: var(--accent); }
   .empty { color: var(--dim); }
+  [hidden] { display: none !important; }
+  .ro { margin: 0 0 16px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; color: var(--dim); font-size: .88rem; }
+  footer label { display: inline-flex; gap: 6px; align-items: center; color: var(--ink); cursor: pointer; }
   footer { margin-top: 36px; color: var(--dim); font: .75rem var(--mono); display: grid; gap: 6px; }
   footer a { color: var(--accent); }
   @media (max-width: 520px) { .item .head { flex-wrap: wrap; } .item .acts { width: 100%; justify-content: flex-start; } }
@@ -126,8 +129,9 @@
       </svg>
     </a>
   </header>
-  <p class="lead">Send files and notes to every device on this hotspot. Nothing leaves the box.</p>
+  <p class="lead" id="lead">Send files and notes to every device on this hotspot. Nothing leaves the box.</p>
 
+  <p class="ro" id="readOnly" hidden>Look, play and save here. Only the admin can add or change things in Drop.</p>
   <section class="send">
     <label class="box drop" id="drop">
       <input type="file" id="files" multiple>
@@ -148,7 +152,7 @@
   <div class="space"><i id="spaceBar"></i></div>
   <div class="items" id="items"><p class="empty">Loading…</p></div>
 
-  <footer><span id="foot">Anyone on this hotspot can see, download and delete what's here.</span><span id="adminNote"></span></footer>
+  <footer><span id="foot"></span><span id="adminNote"></span></footer>
 </main>
 
 <dialog id="moveDlg">
@@ -242,14 +246,17 @@ function itemNode(it) {
   const save = it.kind === "file" && (it.download || info.admin) ? `<a href="${url}?dl=1" download>save</a>` : "";   // the admin can always save
   const copy = it.kind === "text" ? `<button type="button" data-copy>copy</button>` : "";
   const lock = info.admin && it.kind !== "text" ? `<button type="button" class="lock" data-lock></button>` : "";
-  const ren = k === "folder" ? `<button type="button" data-rename>rename</button>` : "";
-  const move = k !== "folder" || hasOtherFolders(it) ? `<button type="button" data-move>move</button>` : "";
+  const edit = info.can_edit;   // read-only for non-admins unless the admin opened Drop up
+  const ren = edit && k === "folder" ? `<button type="button" data-rename>rename</button>` : "";
+  const move = edit && (k !== "folder" || hasOtherFolders(it)) ? `<button type="button" data-move>move</button>` : "";
+  const pin = edit ? `<button type="button" data-pin></button>` : "";
+  const del = edit ? `<button type="button" class="del" data-del>delete</button>` : "";
   const noSave = it.download ? "" : ' controlslist="nodownload" oncontextmenu="return false"';
   el.innerHTML = `
     <div class="head">
       <span class="icon">${icon}</span>
       <span class="what"><b></b><small></small></span>
-      <span class="acts">${save}${copy}${ren}${move}<button type="button" data-pin></button>${lock}<button type="button" class="del" data-del>delete</button></span>
+      <span class="acts">${save}${copy}${ren}${move}${pin}${lock}${del}</span>
     </div>
     ${k === "text" ? `<pre>${linkify(it.text)}</pre>`
       : open ? `<a class="play" href="${esc(open.url)}"><span class="tri">${PLAY_SVG}</span><span><b>Play in ${esc(open.name)}</b><small>${k === "video" ? "Full screen, picks up where you left off" : k === "audio" ? "With the rest of this folder" : "Opens it there"}</small></span></a>`
@@ -261,7 +268,7 @@ function itemNode(it) {
   return el;
 }
 // rebuild a node when something that changes its markup changes (not on every refresh)
-const sig = it => [it.name, it.download, info.admin, openers.length, it.kind === "folder" ? hasOtherFolders(it) : 1].join("|");
+const sig = it => [it.name, it.download, info.admin, info.can_edit, openers.length, it.kind === "folder" ? hasOtherFolders(it) : 1].join("|");
 function hasOtherFolders(it) { return info.items.some(i => i.kind === "folder" && i.id !== it.id) || it.parent; }
 function updateNode(el, it) {
   el.classList.toggle("kept", !!it.kept);
@@ -275,10 +282,13 @@ function updateNode(el, it) {
     const by = it.blocked_by && byId.get(it.blocked_by);
     small.insertAdjacentHTML("beforeend", `<span class="badge" title="${by ? "Turned off for the folder " + esc(by.name) : "Turned off by the admin"}">no downloads</span>`);
   }
+  if (it.pinned && !info.can_edit) small.insertAdjacentHTML("beforeend", `<span class="badge">kept</span>`);
   const p = el.querySelector("[data-pin]");
-  p.textContent = it.pinned ? "kept" : "keep"; p.classList.toggle("on", !!it.pinned);
-  p.title = k === "folder" ? (it.pinned ? "Everything in here is kept. Tap to let it expire again." : "Keep everything in this folder")
-    : it.pinned ? "Kept until someone deletes it. Tap to let it expire." : `Keep past ${info.keep_days} days`;
+  if (p) {
+    p.textContent = it.pinned ? "kept" : "keep"; p.classList.toggle("on", !!it.pinned);
+    p.title = k === "folder" ? (it.pinned ? "Everything in here is kept. Tap to let it expire again." : "Keep everything in this folder")
+      : it.pinned ? "Kept until someone deletes it. Tap to let it expire." : `Keep past ${info.keep_days} days`;
+  }
   const l = el.querySelector("[data-lock]");
   if (l) {
     const viaFolder = !it.nodownload && it.blocked_by && byId.get(it.blocked_by);
@@ -320,14 +330,30 @@ function render() {
   $("#spaceBar").style.width = pct + "%";
   $("#usage").textContent = `${size(info.used)} used · ${size(info.free)} free`;
   $("#limits").textContent = `or drop them here · up to ${size(info.max_file)} each`;
-  $("#foot").textContent = `Anyone on this hotspot can see and delete what's here. Items go after ${info.keep_days} days unless kept.`;
-  $("#adminNote").innerHTML = info.admin ? "Signed in as admin: you can turn downloads off for a file or folder. People can still play it here; it stops casual copies, not a determined one."
-    : info.admin_available ? `Admin? <a href="../admin/">Sign in</a> to turn downloads off for files or folders.` : "";
+  const edit = info.can_edit;
+  $("#readOnly").hidden = edit;
+  $("#lead").textContent = edit ? "Send files and notes to every device on this hotspot. Nothing leaves the box."
+    : "Films, music and files on this box, for every device on the hotspot. Nothing leaves the box.";
+  document.querySelector(".send").hidden = !edit;
+  $("#newFolder").hidden = !edit;
+  $("#foot").textContent = (info.open || !info.admin_available ? "Anyone on this hotspot can see, add and delete what's here."
+    : "Anyone on this hotspot can see what's here; only the admin can add or change things.")
+    + ` Items go after ${info.keep_days} days unless kept.`;
+  $("#adminNote").innerHTML = info.admin
+    ? `<label><input type="checkbox" id="openUp"${info.open ? " checked" : ""}> Let everyone add, move, keep and delete</label>
+       <span>Signed in as admin: you can turn downloads off for a file or folder. People can still play it here; it stops casual copies, not a determined one.</span>`
+    : info.admin_available ? `Admin? <a href="../admin/">Sign in</a> to add things, or to turn downloads off for files or folders.` : "";
+  $("#openUp")?.addEventListener("change", async e => {
+    const box = e.target; box.disabled = true;
+    if (!await call("api/settings", { method: "PUT", headers: JH, body: JSON.stringify({ open: box.checked }) })) box.checked = !box.checked;
+    box.disabled = false;
+    await refresh();
+  });
 }
 async function refresh() {
   try {
     const d = await (await fetch("api/items", { cache: "no-store" })).json();
-    const changed = d.version !== version || !info || d.admin !== info.admin; version = d.version; info = d;
+    const changed = d.version !== version || !info || d.admin !== info.admin || d.can_edit !== info.can_edit; version = d.version; info = d;
     if (changed) render();
     else document.querySelectorAll(".item").forEach(el => { const it = info.items.find(i => i.id === el.dataset.id); if (it) updateNode(el, it); });
   } catch { /* box restarting: try again next time */ }
@@ -421,6 +447,7 @@ $("#textForm").addEventListener("submit", async e => {
 
 const queue = []; let sending = false;
 function addFiles(list) {
+  if (info && !info.can_edit) return;
   for (const f of list) {
     const row = document.createElement("div");
     row.className = "up";

@@ -29,7 +29,12 @@ on http://localhost:8766 with no admin and no "Play in".
   disappears from "Play in ..." but keeps running at its address (decision 0013).
 - **`GET /api/admin/session`** (Drop backend -> `ADMIN_URL`): 200 if the forwarded `am_admin`
   cookie is a live admin session, 401 otherwise. Details in
-  [security.md](security.md#how-the-admin-is-recognised).
+  [security.md](security.md#how-the-admin-is-recognised). With `ADMIN_URL` set, Drop is
+  read-only for everyone but the admin until the admin opens it up (platform decision 0026,
+  [security.md](security.md#who-may-change-drop-read-only-by-default)).
+
+Other apps only **read** from Drop (`GET api/items`, `GET api/files/<id>`), which stays open
+to everyone. The one write (QuickShot's setup, below) passes on the person's admin cookie.
 
 ### The `opens` contract
 
@@ -43,7 +48,7 @@ An app that can open Drop files declares in `portal/apps.json` (mirrored in its 
   `/<lowercase-id>/`, and `{id}` is replaced with the Drop item id.
 - For audio/video, Drop shows the button only when this device's browser reports it can play
   the type (`canPlayType`). Other types are offered whenever they match. See
-  [page.md](page.md#play-in-app-lines-197-216).
+  [page.md](page.md#play-in-app-lines-219-240).
 - Today Cinema (`video/*`, `audio/*`) and Doom (`application/x-doom-wad`, url
   `/doom/#drop={id}`) declare `opens`. QuickShot doesn't (it plays a folder, not single files).
 - Doom (`../airplanemode-doom`) has no backend: its page fetches `../drop/api/items`, reads
@@ -86,14 +91,20 @@ compared case-insensitively after strip). Decision 0014.
 
 Backend (`airplanemode-quickshot/app.py`):
 
-- `_drop(method, path, body)` calls `{DROP_URL}{path}` with `Content-Type: application/json`
-  and **`X-Drop: 1`** (needed for writes).
+- `_drop(method, path, body=None, cookie=None)` calls `{DROP_URL}{path}` with
+  `Content-Type: application/json` and **`X-Drop: 1`** (needed for writes), plus
+  `Cookie: am_admin=<cookie>` when given. A 403 from Drop becomes `DropRefused`, which
+  QuickShot passes on as 403 with Drop's message (other failures are 503 "Can't reach Drop").
 - `GET /api/items`: `find_folder()` = first item with `kind == "folder"`, falsy `parent`
   (top-level), a matching name and a valid id. `clips_in()` = files (`kind == "file"`, `type`
   matching `^video/...`) whose `parent` is that folder or any folder below it (walking
   `parent`). The subfolder right under QuickShot becomes the clip's "creator".
 - `POST /api/folders {"name": "QuickShot", "parent": null}` from its `POST api/setup`, when
-  the folder is missing. **This is the only write another app makes to Drop.**
+  the folder is missing, with the caller's `am_admin` cookie forwarded. **This is the only
+  write another app makes to Drop.** On a read-only Drop only the admin (or anyone, once the
+  admin opened Drop up) can do it; anyone else gets 403 and the page says "Only the admin can
+  create it. Sign in to the admin panel first." Putting clips into the folder is a Drop
+  upload, so the same rule applies.
 - Fields QuickShot relies on: **`id`, `kind`, `name`, `parent`, `type`, `size`, `created`,
   `download`**, and the folder's `name`.
 - Likes/views/comments live in QuickShot's own volume. It forgets counts for clip ids no longer
@@ -111,7 +122,9 @@ Browser: `v.src = drop_path + "api/files/" + id`, no context menu when `!downloa
   these breaks Cinema and QuickShot.
 - Keep `GET /api/files/<id>` streaming inline video/audio with Range, **even when
   downloads are off**.
-- Keep `POST /api/folders {name, parent}` and the `X-Drop: 1` requirement.
+- Keep `POST /api/folders {name, parent}`, the `X-Drop: 1` requirement, and the 403 (with a
+  human `detail`) for a non-editor: QuickShot shows Drop's message.
+- Keep reading (`api/items`, `api/files`) open to everyone, read-only or not.
 - Keep the page's `#f=<id>` hash routing.
 - Ids stay 16 lowercase hex chars (both consumers validate with the same regex).
 - Renaming the QuickShot folder in Drop "disconnects" QuickShot until it's named QuickShot again

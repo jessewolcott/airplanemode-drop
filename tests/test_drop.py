@@ -302,6 +302,7 @@ def test_downloads_off_admin_only_and_inherited():
     reset()
     admins = {"a" * 32}
     drop.ADMIN_URL, drop.check_admin_token = "http://admin.test", lambda t: t in admins
+    drop.settings["open"] = True    # this test is about downloads off, not who may edit
     drop._admin_cache.clear()
     try:
         movies = folder("Movies")
@@ -349,6 +350,7 @@ def test_downloads_off_admin_only_and_inherited():
     finally:
         c.cookies.clear()
         drop.ADMIN_URL, drop.check_admin_token = "", drop._ask_admin_service
+        drop.settings["open"] = False
         drop._admin_cache.clear()
 
 
@@ -356,6 +358,7 @@ def test_doom_wads_stream_to_the_doom_app():
     reset()
     admins = {"a" * 32}
     drop.ADMIN_URL, drop.check_admin_token = "http://admin.test", lambda t: t in admins
+    drop.settings["open"] = True
     drop._admin_cache.clear()
     try:
         wad = ok(put("MyMod.WAD", b"PWAD" + b"\0" * 60))
@@ -373,6 +376,62 @@ def test_doom_wads_stream_to_the_doom_app():
     finally:
         c.cookies.clear()
         drop.ADMIN_URL = ""
+        drop.settings["open"] = False
+
+
+def test_read_only_for_everyone_but_the_admin():
+    """On the box (admin service present) only the admin adds, moves, renames, keeps and deletes,
+    until the admin lets everyone change Drop. Looking, playing and saving stay open."""
+    reset()
+    admins = {"a" * 32}
+    drop.ADMIN_URL, drop.check_admin_token = "http://admin.test", lambda t: t in admins
+    drop._admin_cache.clear()
+    try:
+        c.cookies.set("am_admin", "a" * 32)
+        lst = ok(c.get("/api/items"))
+        assert lst["can_edit"] and not lst["open"]
+        box = folder("Movies")
+        film = ok(put("film.mp4", b"v" * 100))
+        note = ok(c.post("/api/texts", json={"text": "gate B12"}, headers=H))
+        c.cookies.clear()
+        lst = ok(c.get("/api/items"))
+        assert not lst["can_edit"] and not lst["admin"]
+        no = "Only the admin can add or change things"
+        for r in [put("x.mp4", b"x"),
+                  c.post("/api/texts", json={"text": "hi"}, headers=H),
+                  c.post("/api/folders", json={"name": "Mine"}, headers=H),
+                  patch(film["id"], name="renamed.mp4"),
+                  patch(film["id"], parent=box["id"]),
+                  c.post(f"/api/items/{film['id']}/pin", json={"pinned": True}, headers=H),
+                  c.delete(f"/api/items/{note['id']}", headers=H),
+                  c.delete(f"/api/items/{box['id']}", headers=H)]:
+            assert r.status_code == 403 and no in r.json()["detail"], (r.status_code, r.text)
+        assert len(drop.store.items) == 3
+        # still open: the list, playing (Range) and saving a copy
+        assert c.get(f"/api/files/{film['id']}", headers={"Range": "bytes=0-9"}).status_code == 206
+        assert c.get(f"/api/files/{film['id']}", params={"dl": 1}).status_code == 200
+        # only the admin flips the switch
+        assert c.put("/api/settings", json={"open": True}, headers=H).status_code == 403
+        c.cookies.set("am_admin", "a" * 32)
+        assert c.put("/api/settings", json={"open": True}).status_code == 403          # header still needed
+        v = drop.store.version
+        assert ok(c.put("/api/settings", json={"open": True}, headers=H)) == {"open": True}
+        assert drop.store.version > v and drop.load_settings() == {"open": True}       # saved, pages see it
+        c.cookies.clear()
+        lst = ok(c.get("/api/items"))
+        assert lst["can_edit"] and lst["open"]
+        ok(c.post(f"/api/items/{film['id']}/pin", json={"pinned": True}, headers=H))
+        ok(c.delete(f"/api/items/{note['id']}", headers=H))
+        c.cookies.set("am_admin", "a" * 32)
+        ok(c.put("/api/settings", json={"open": False}, headers=H))
+        c.cookies.clear()
+        assert c.delete(f"/api/items/{film['id']}", headers=H).status_code == 403
+    finally:
+        c.cookies.clear()
+        drop.settings["open"] = False
+        drop.SETTINGS.unlink(missing_ok=True)
+        drop.ADMIN_URL, drop.check_admin_token = "", drop._ask_admin_service
+        drop._admin_cache.clear()
 
 
 def test_standalone_has_no_admin():

@@ -7,41 +7,53 @@ uses relative URLs (`api/items`).
 ## Conventions
 
 - **Errors** are JSON `{"detail": "<human sentence>"}` with the status code. The custom handler
-  for `HTTPException` is at `app.py:563-565`. Request-body validation failures (wrong JSON
+  for `HTTPException` is at `app.py:621-623`. Request-body validation failures (wrong JSON
   types, a missing required field) come from FastAPI's default handler as **422** with
   `{"detail": [ {loc, msg, type, ...}, ... ]}`, a list rather than a string.
-- **Changes need `X-Drop: 1`** (`need_header`, `app.py:266-268`). Without it: **403**
+- **Changes need `X-Drop: 1`** (`need_header`, `app.py:286-288`). Without it: **403**
   `"Missing request header."`. FastAPI parses and validates the body *before* the handler
   runs, so a request with a bad body and no header gets 422, not 403. See
   [security.md](security.md#the-x-drop-header-csrf-defence).
+- **Changes need an editor** (`need_editor`, `app.py:324-328`: `need_header`, then
+  `can_edit`, `app.py:318-321`). On the box Drop is read-only for everyone but the admin until
+  the admin opens it up (`PUT /api/settings`). Otherwise: **403** `"Only the admin can add or
+  change things in Drop. Sign in to the admin panel, or ask the admin to let everyone change
+  Drop."`. Standalone (no `ADMIN_URL`) everyone is an editor. See
+  [security.md](security.md#who-may-change-drop-read-only-by-default).
 - **Ids** in paths go through `store.get()`: anything not matching `^[0-9a-f]{16}$`, or not
   existing -> **404** `"No such item."`.
 - **Folder ids** in bodies/queries go through `store.folder()`: `null`/`""`/`"root"` = the
   top. Unknown -> 404. Not a folder -> **400** `"That's not a folder."`.
-- No auth except the admin check for `nodownload` (see [security.md](security.md#how-the-admin-is-recognised)).
+- No login of its own: the admin is the platform admin panel's session (see
+  [security.md](security.md#how-the-admin-is-recognised)). Reading needs nothing.
 
 ## Endpoint list
 
-| Method | Path | Header | Purpose |
+"Editor" = `need_editor`: the admin, or anyone once the admin opened Drop up, or anyone
+standalone.
+
+| Method | Path | Needs | Purpose |
 |---|---|---|---|
 | GET | `/` | | The page (`static/index.html`, `Cache-Control: no-cache`) |
-| GET | `/api/items` | | Everything, plus storage figures and the admin flag |
+| GET | `/api/items` | | Everything, plus storage figures, the admin flag, `can_edit`, `open` |
 | GET, HEAD | `/api/files/{id}` | | Stream or download a file (Range supported) |
-| PUT | `/api/files?name=&parent=` | X-Drop | Upload one file (raw body, streamed) |
-| POST | `/api/texts` | X-Drop | Share a text snippet |
-| POST | `/api/folders` | X-Drop | Make a folder |
-| PATCH | `/api/items/{id}` | X-Drop | Rename, move, admin: downloads on/off |
-| POST | `/api/items/{id}/pin` | X-Drop | Keep / un-keep |
-| DELETE | `/api/items/{id}` | X-Drop | Delete (a folder takes everything under it with it) |
+| PUT | `/api/files?name=&parent=` | X-Drop, editor | Upload one file (raw body, streamed) |
+| POST | `/api/texts` | X-Drop, editor | Share a text snippet |
+| POST | `/api/folders` | X-Drop, editor | Make a folder |
+| PATCH | `/api/items/{id}` | X-Drop, editor | Rename, move, admin: downloads on/off |
+| POST | `/api/items/{id}/pin` | X-Drop, editor | Keep / un-keep |
+| DELETE | `/api/items/{id}` | X-Drop, editor | Delete (a folder takes everything under it with it) |
+| PUT | `/api/settings` | X-Drop, admin | Let everyone change Drop (`{"open": bool}`) |
 
 ---
 
-## `GET /api/items` (`app.py:314-327`)
+## `GET /api/items` (`app.py:347-362`)
 
 1. Takes the lock and runs `store.sweep()` (expired items vanish here).
 2. Builds the list sorted newest first, each item = stored fields + `kept`, `download`,
-   `blocked_by` (see [data-model.md](data-model.md#derived-fields-only-in-get-apiitems-responses-apppy279-282)).
-3. Calls `is_admin(request)` (may do a cached HTTP call to the admin service).
+   `blocked_by` (see [data-model.md](data-model.md#derived-fields-only-in-get-apiitems-responses-apppy353-356)).
+3. Calls `is_admin(request)` (may do a cached HTTP call to the admin service) and works out
+   `can_edit` from it (same rule as `can_edit()`).
 
 Response:
 
@@ -53,6 +65,8 @@ Response:
               "kept": false, "download": false, "blocked_by": "<folder id>"}, ... ],
   "admin": false,              // this caller is the platform admin
   "admin_available": true,     // ADMIN_URL is set (i.e. running on the platform)
+  "can_edit": false,           // this caller may add, move, rename, keep and delete
+  "open": false,               // the admin let everyone change Drop (settings.json)
   "used": 123456,              // bytes of stored files
   "cap": 4294967296,           // DROP_MAX_BYTES
   "free": 4000000000,          // store.free(): what a new upload may use right now
@@ -66,17 +80,17 @@ their full `text`, so this response can be large if people paste a lot.
 
 ---
 
-## `PUT /api/files?name=<name>&parent=<folder id>` (upload) (`app.py:401-457`)
+## `PUT /api/files?name=<name>&parent=<folder id>` (upload) (`app.py:440-496`)
 
 The request body **is** the file (no multipart). The page sends a `File` object through XHR.
 Content-Length is usually set. Chunked bodies without a length are supported too.
 
 Order of operations:
 
-1. `need_header`. 403 without `X-Drop: 1`.
+1. `need_editor`. 403 without `X-Drop: 1`, or for a non-editor, **before any of the body is read**.
 2. `name = clean_name(name)` (default `"file"`). See [security.md](security.md#names-are-never-paths).
 3. `store.folder(parent)`: **fails before reading any of the body** (400/404). Tested at
-   `tests/test_drop.py:254-255`.
+   `tests/test_drop.py:268-269`.
 4. If `Content-Length` is present and all digits (`declared`):
    - `declared > MAX_FILE` -> **413** `"<name> is <size>; the limit per file is <limit>."`
    - `declared > store.free()` -> **413** `"Not enough space for <name> (<size>): <free> free. Delete something first."`
@@ -114,7 +128,9 @@ reservation grows chunk by chunk and the limit is enforced as data arrives
 
 ---
 
-## `GET|HEAD /api/files/{id}` (`app.py:353-397`)
+## `GET|HEAD /api/files/{id}` (`app.py:388-436`)
+
+Open to everyone, also when Drop is read-only (only downloads-off limits it).
 
 Query: `dl` (bool, default false). `?dl=1` asks for a download (attachment).
 
@@ -127,12 +143,12 @@ Query: `dl` (bool, default false). `?dl=1` asks for a download (attachment).
    Inline requests (streaming) are never blocked. See [security.md](security.md#downloads-off-what-is-and-isnt-blocked).
 5. Headers on every success, and on 416:
    - `Accept-Ranges: bytes`
-   - `Content-Disposition: inline|attachment; filename="<ascii fallback>"; filename*=UTF-8''<percent-encoded>` (`content_disposition()`, `app.py:330-332`; non-ASCII and `" \ ;` become `_` in the fallback)
+   - `Content-Disposition: inline|attachment; filename="<ascii fallback>"; filename*=UTF-8''<percent-encoded>` (`content_disposition()`, `app.py:365-367`; non-ASCII and `" \ ;` become `_` in the fallback)
    - `X-Content-Type-Options: nosniff`
    - `Content-Security-Policy: sandbox; default-src 'none'; img-src 'self'; media-src 'self'`
    - `Cache-Control: private, max-age=3600`
    - `Content-Type`: the stored type when inline, otherwise `application/octet-stream`.
-5a. **Behind the platform's Caddy** (`app.py:374-377`, platform decision 0024): a `GET` with the
+5a. **Behind the platform's Caddy** (`app.py:409-412`, platform decision 0024): a `GET` with the
    request header `X-Sendfile-Type: X-Accel-Redirect` (Caddy adds it) gets **200**, no body,
    the headers above plus `X-Accel-Redirect: /files/<id>`. Caddy then serves
    `/srv/drop/files/<id>` itself (the `drop-data` volume, read-only in the proxy) with its own
@@ -141,7 +157,7 @@ Query: `dl` (bool, default false). `?dl=1` asks for a download (attachment).
    QuickShot) and Drop on its own (no such header) still use them. The access checks above
    always run first, so **any new access rule must go before this step**. Tested in
    `test_accel_redirect`.
-6. Range (`parse_range()`, `app.py:335-350`). Only a single `bytes=` range:
+6. Range (`parse_range()`, `app.py:370-385`). Only a single `bytes=` range:
    - No header -> whole file, **200**.
    - `bytes=a-b` -> `[a, min(b, size-1)]` (an end past EOF is clamped).
    - `bytes=a-` -> `[a, size-1]`.
@@ -161,10 +177,11 @@ and seeking in `<video>`/Cinema relies on it. Tested in `test_range`.
 
 ---
 
-## `POST /api/texts` (`app.py:460-480`)
+## `POST /api/texts` (`app.py:504-519`)
 
 Body: `{"text": str, "parent": str|null}`.
 
+- `need_editor` (403).
 - `text.strip()`. Empty -> **400** `"Nothing to share."`
 - Over `MAX_TEXT` (65536) **UTF-8 bytes** -> **413** `"That's too long for a text item. Save it as a file and upload it instead."`
   (The page's textarea `maxlength=65536` counts UTF-16 code units, so multibyte text can pass
@@ -173,24 +190,26 @@ Body: `{"text": str, "parent": str|null}`.
 - Under the lock: `parent = store.folder(body.parent)`, append, save. Returns the item.
 - Text doesn't count against file space (`test_text_items`).
 
-## `POST /api/folders` (`app.py:483-500`)
+## `POST /api/folders` (`app.py:527-539`)
 
 Body: `{"name": str, "parent": str|null}`.
 
+- `need_editor` (403).
 - `name = clean_name(name)[:80]` (so an empty or junk name becomes `"file"`; the page
   refuses blank names first).
 - Under the lock: validate `parent`. `depth(parent) >= MAX_DEPTH` -> **400** `"That's too many folders deep."`
 - Folder item: `size 0`, `type ""`. Returns it.
 - Duplicate names are allowed (nothing enforces uniqueness).
 
-## `PATCH /api/items/{id}` (`app.py:503-531`)
+## `PATCH /api/items/{id}` (`app.py:548-570`)
 
 Body (all optional): `{"name": str, "parent": str, "nodownload": bool}`.
 
-1. `need_header`.
+1. `need_editor` (403).
 2. If `nodownload` is present and the caller isn't the admin -> **403**
-   `"Only the admin can turn downloads on or off. Sign in to the admin panel first."`.
-   This happens **before** the item lookup, so a non-admin gets 403 even for an unknown id.
+   `"Only the admin can turn downloads on or off. Sign in to the admin panel first."`
+   (an opened-up Drop doesn't change that). Both checks happen **before** the item lookup,
+   so a non-admin gets 403 even for an unknown id.
 3. Under the lock, `store.get(id)`, then each present field in turn:
    - `name`: `clean_name(name)`, truncated to 80 (folders) or 200 (others). Any kind can be
      renamed through the API (the page only offers it for folders). **`type` isn't
@@ -205,19 +224,33 @@ Partial failure: fields are applied in order on the live dict. If `name` was set
 `parent` check raises 400, the in-memory rename has already happened but wasn't saved. It will
 be written by the next save. Hard to hit from the page, which sends one field at a time.
 
-## `POST /api/items/{id}/pin` (`app.py:534-545`)
+## `POST /api/items/{id}/pin` (`app.py:577-584`)
 
-Body: `{"pinned": bool}`. Anyone may pin. Sets `pinned`, saves, returns the item. On a folder it
+Body: `{"pinned": bool}`. `need_editor` (403). Sets `pinned`, saves, returns the item. On a folder it
 keeps everything below it (inherited at sweep time; children's own `pinned` is untouched).
 
-## `DELETE /api/items/{id}` (`app.py:548-560`)
+## `DELETE /api/items/{id}` (`app.py:587-599`)
 
-Under the lock: the item plus, for folders, `store.descendants(id)` (everything at any depth)
+`need_editor` (403). Under the lock: the item plus, for folders, `store.descendants(id)` (everything at any depth)
 are removed from the list and saved, **then** their files are unlinked. Returns
-`{"ok": true, "deleted": <count>}`. 404 if it's already gone. Anyone may delete. There's no
+`{"ok": true, "deleted": <count>}`. 404 if it's already gone. Any editor may delete. There's no
 trash or undo.
 
-## `GET /` (`app.py:568-570`)
+## `PUT /api/settings` (`app.py:606-618`)
+
+Body: `{"open": bool}`. The admin's switch "let everyone add, move, keep and delete".
+
+1. `need_header` (403), then `is_admin` -> **403** `"Only the admin can change who may edit
+   Drop. Sign in to the admin panel first."`. Standalone nobody is admin, so this is always 403
+   there (and not needed: standalone is open anyway).
+2. Sets `settings["open"]`, writes `/data/settings.json` atomically (`.tmp` + `replace`).
+3. Bumps `store.version`, so polling pages re-render with the new `can_edit`.
+4. Returns `{"open": bool}`.
+
+`settings.json` is read once at start (`load_settings()`, `app.py:81-89`). Missing or
+unreadable means closed (read-only for non-admins); a bad file is logged, not renamed.
+
+## `GET /` (`app.py:626-628`)
 
 `FileResponse(static/index.html)` with `Cache-Control: no-cache`, so a new image's page
 shows up straight away.

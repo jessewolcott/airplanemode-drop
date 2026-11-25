@@ -9,10 +9,15 @@ API (all relative to the app's root; the platform serves it at /drop/):
   PATCH  api/items/{id} {name?, parent?, nodownload?}   rename, move, or (admin) turn downloads off
   POST   api/items/{id}/pin {pinned}   keep an item past the expiry (on a folder: everything inside)
   DELETE api/items/{id}            (a folder goes with everything in it)
+  PUT    api/settings {open}       (admin) let everyone change Drop, not just the admin
 
 Changes need the header "X-Drop: 1". Browsers can't send it cross-site without a CORS
 preflight, which this app never allows, so other websites can't add or delete items.
-There's no login: anyone on the hotspot can use Drop. The hotspot password is the access control.
+There's no login: anyone on the hotspot can see, play and download what's in Drop.
+
+Read-only by default: on the box, only the admin may add (files, texts, folders), rename, move,
+keep or delete, until the admin switches "let everyone change Drop" on (settings.json).
+Standalone (no ADMIN_URL), nobody can be admin, so everyone may change everything.
 
 Admin: whoever is signed in to the AirplaneMode admin panel. Drop is served from the same
 address, so it gets the panel's session cookie and asks the admin service (ADMIN_URL) whether
@@ -70,6 +75,21 @@ ADMIN_COOKIE = "am_admin"
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 FILES, TMP, META = DATA / "files", DATA / "tmp", DATA / "items.json"
+SETTINGS = DATA / "settings.json"
+
+
+def load_settings():
+    """{"open": bool}: may everyone (not just the admin) add, move, rename, keep and delete?"""
+    try:
+        return {"open": bool(json.loads(SETTINGS.read_text(encoding="utf-8")).get("open"))}
+    except FileNotFoundError:
+        return {"open": False}
+    except Exception as e:
+        log.warning("could not read %s (%s); Drop stays read-only for non-admins", SETTINGS, e)
+        return {"open": False}
+
+
+settings = load_settings()
 
 # Shown in the page (inline). Everything else downloads as an attachment, so an uploaded
 # HTML or SVG file can never run as a page on the box's own address.
@@ -295,6 +315,19 @@ async def is_admin(request: Request):
     return answer
 
 
+async def can_edit(request: Request):
+    """Read-only for everyone but the admin, unless the admin opened Drop up. Standalone (no
+    admin service, so nobody could ever be admin) stays open."""
+    return not ADMIN_URL or settings["open"] or await is_admin(request)
+
+
+async def need_editor(request: Request):
+    need_header(request)
+    if not await can_edit(request):
+        raise HTTPException(403, "Only the admin can add or change things in Drop. Sign in to the admin "
+                                 "panel, or ask the admin to let everyone change Drop.")
+
+
 def clean_name(name):
     """A display name only (files are stored by id): last path part, no control characters."""
     name = unicodedata.normalize("NFC", name or "")
@@ -321,8 +354,10 @@ async def items(request: Request):
         b = store.blocked(i, ids)
         out.append({**i, "kept": store.kept(i, ids), "download": b is None,
                     "blocked_by": None if b is None or b is i else b["id"]})
+    admin = await is_admin(request)
     return {"version": store.version, "items": out,
-            "admin": await is_admin(request), "admin_available": bool(ADMIN_URL),
+            "admin": admin, "admin_available": bool(ADMIN_URL),
+            "can_edit": not ADMIN_URL or settings["open"] or admin, "open": settings["open"],
             "used": store.used(), "cap": MAX_BYTES, "free": store.free(), "max_file": MAX_FILE,
             "keep_days": KEEP_DAYS}
 
@@ -404,7 +439,7 @@ async def download(iid: str, request: Request, dl: bool = False):
 # ---------------- changes ----------------
 @app.put("/api/files")
 async def upload(request: Request, name: str = "file", parent: str | None = None):
-    need_header(request)
+    await need_editor(request)
     name = clean_name(name)
     store.folder(parent)  # fail before receiving anything
     declared = request.headers.get("content-length")
@@ -468,7 +503,7 @@ class Text(BaseModel):
 
 @app.post("/api/texts")
 async def add_text(body: Text, request: Request):
-    need_header(request)
+    await need_editor(request)
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Nothing to share.")
@@ -491,7 +526,7 @@ class NewFolder(BaseModel):
 
 @app.post("/api/folders")
 async def add_folder(body: NewFolder, request: Request):
-    need_header(request)
+    await need_editor(request)
     name = clean_name(body.name)[:80]
     async with store.lock:
         parent = store.folder(body.parent)
@@ -512,7 +547,7 @@ class Change(BaseModel):
 
 @app.patch("/api/items/{iid}")
 async def change(iid: str, body: Change, request: Request):
-    need_header(request)
+    await need_editor(request)
     if body.nodownload is not None and not await is_admin(request):
         raise HTTPException(403, "Only the admin can turn downloads on or off. Sign in to the admin panel first.")
     async with store.lock:
@@ -541,7 +576,7 @@ class Pin(BaseModel):
 
 @app.post("/api/items/{iid}/pin")
 async def pin(iid: str, body: Pin, request: Request):
-    need_header(request)
+    await need_editor(request)
     async with store.lock:
         item = store.get(iid)
         item["pinned"] = body.pinned
@@ -551,7 +586,7 @@ async def pin(iid: str, body: Pin, request: Request):
 
 @app.delete("/api/items/{iid}")
 async def delete(iid: str, request: Request):
-    need_header(request)
+    await need_editor(request)
     async with store.lock:
         item = store.get(iid)
         gone = [item] + (store.descendants(iid) if item["kind"] == "folder" else [])
@@ -562,6 +597,25 @@ async def delete(iid: str, request: Request):
             if i["kind"] == "file":
                 (FILES / i["id"]).unlink(missing_ok=True)
     return {"ok": True, "deleted": len(gone)}
+
+
+class Settings(BaseModel):
+    open: bool
+
+
+@app.put("/api/settings")
+async def put_settings(body: Settings, request: Request):
+    """The admin's switch: let everyone add, move, rename, keep and delete (off by default)."""
+    need_header(request)
+    if not await is_admin(request):
+        raise HTTPException(403, "Only the admin can change who may edit Drop. Sign in to the admin panel first.")
+    settings["open"] = body.open
+    tmp = SETTINGS.with_suffix(".tmp")
+    tmp.write_text(json.dumps(settings), encoding="utf-8")
+    tmp.replace(SETTINGS)
+    store.version += 1          # pages polling api/items pick the change up
+    log.info("everyone may change Drop: %s", body.open)
+    return dict(settings)
 
 
 @app.exception_handler(HTTPException)

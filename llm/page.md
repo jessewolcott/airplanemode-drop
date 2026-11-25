@@ -8,24 +8,29 @@ assets (the favicon is a `data:` SVG). Dark theme only (`color-scheme: dark`). I
 The page lives at `/drop/` on the box and at `/` standalone. `test_page_uses_relative_urls`
 fails on any `fetch("/api/`, `src`/`href` starting with `http:`, `https:`, `//` or a single `/`.
 
-## Layout (HTML, lines 118-166)
+## Layout (HTML, lines 121-170)
 
 - Header: title, then the **home button** at its right end: `<a class="am-home" href="../">`
   with the house SVG and `aria-label="AirplaneMode home"` (the platform's app contract item 10;
   it replaced the old "AirplaneMode" text link). 44 x 44 px, panel background, accent focus
   ring, no transition under reduced motion. `main`'s padding uses `env(safe-area-inset-*)`.
+- `#lead`: the intro line (it changes when Drop is read-only).
+- `#readOnly` (`.ro`, `hidden` unless read-only): "Look, play and save here. Only the admin can
+  add or change things in Drop."
 - `.send`: a `<label id="drop">` around a hidden `<input type=file multiple id=files>` (click
   or drag-and-drop), and `#textForm` (textarea `maxlength=65536`, "Share text").
 - `#uploads`: one progress row per queued file.
 - `.listhead`: `#crumbs` breadcrumbs, `#usage` ("X used · Y free"), `#newFolder` ("+ folder").
 - `.space` bar (`#spaceBar` width = used/cap).
 - `#items`: the list for the current folder.
-- Footer: `#foot` (who can see and delete, and the expiry), `#adminNote` (admin text or the
-  sign-in link).
+- Footer: `#foot` (who can see and change things, and the expiry), `#adminNote` (for the
+  admin: the `#openUp` checkbox and the downloads-off note; otherwise the sign-in link).
+- A global `[hidden] { display: none !important; }` rule, so `hidden` wins over the
+  `display` set on `.send` and the buttons.
 - `<dialog id="moveDlg">`: the move picker. Its `.dhead` row holds the title and a second
   `a.am-home`, because a modal dialog makes the header's button unreachable.
 
-## State (line 175)
+## State (line 179)
 
 ```js
 let info = null,        // last GET api/items response
@@ -33,20 +38,20 @@ let info = null,        // last GET api/items response
     byId = new Map(),   // id -> item, rebuilt in render()
     here = null,        // current folder id (null = top)
     openers = [];       // apps that can play Drop files (from ../api/apps)
-const H = { "X-Drop": "1" }, JH = { ...H, "Content-Type": "application/json" };   // lines 171-172
+const H = { "X-Drop": "1" }, JH = { ...H, "Content-Type": "application/json" };   // lines 175-176
 ```
 
-## Polling and refresh (lines 327-334, 489-491)
+## Polling and refresh (lines 353-360, 516-518)
 
 - On load: `go()` (reads the hash), `refresh()`, then `setInterval(refresh, 4000)`.
 - `refresh()` fetches `api/items` (`cache: "no-store"`). It does a **full `render()`** only
-  when `version` changed, on first load, or when `admin` flipped. Otherwise it just calls
+  when `version` changed, on first load, or when `admin` or `can_edit` flipped. Otherwise it just calls
   `updateNode()` on each existing `.item` (ages, "goes in N d" countdowns, keep state).
   Network errors are swallowed ("box restarting").
 - After each action (delete, pin, lock, rename, move, new folder, text, finished upload) the
   page calls `refresh()` straight away.
 
-## Folder navigation: `#f=<id>` (lines 207-213, 293-298, 335-340)
+## Folder navigation: `#f=<id>` (lines 211-217, 303-308, 361-366)
 
 - The current folder is in the URL hash: `#f=<16 hex>`. `go()` parses it with
   `/^#f=([0-9a-f]{16})$/`. Anything else means the top. It's bound to `hashchange`, so
@@ -61,15 +66,15 @@ const H = { "X-Drop": "1" }, JH = { ...H, "Content-Type": "application/json" }; 
 - Breadcrumbs: "On the box" (a link to `#` when inside a folder), then each ancestor as
   `#f=<id>`, and the current folder in bold. The drop zone title becomes "Send files to <folder>".
 
-## Keyed rendering (lines 236-326)
+## Keyed rendering (lines 240-352)
 
 The list refreshes every 4 s, but a `<video>` that's playing must not be destroyed. So nodes
 are **keyed by item id** and rebuilt only when their markup would change:
 
 - Each `<article class="item">` has `data-id` and `data-sig`.
-- `sig(it)` (line 264) = `[name, download, info.admin, openers.length, folder ? hasOtherFolders(it) : 1].join("|")`:
-  everything that changes the static markup (title, save button, lock button, play button vs
-  inline player, move button).
+- `sig(it)` (line 271) = `[name, download, info.admin, info.can_edit, openers.length, folder ? hasOtherFolders(it) : 1].join("|")`:
+  everything that changes the static markup (title, save button, lock button, edit buttons,
+  play button vs inline player, move button).
 - `render()`:
   1. Collects existing nodes into `have` (id -> element).
   2. Builds the visible list: folders first, sorted with `localeCompare(..., {numeric: true})`,
@@ -80,13 +85,15 @@ are **keyed by item id** and rebuilt only when their markup would change:
      playing).
   4. Removes nodes that are no longer in this folder. An empty folder or top shows an `.empty`
      message instead.
-  5. Updates the space bar, usage, limits text, footer and admin note.
-- `itemNode(it)` (lines 237-262) builds the static markup:
+  5. Updates the space bar, usage, limits text, footer and admin note, and the read-only
+     bits: `#readOnly`, `#lead`, `.send` and `#newFolder` follow `info.can_edit`.
+- `itemNode(it)` (lines 241-269) builds the static markup:
   - Icon: folder SVG, `TXT`, or the file extension (`ext()`, up to 5 chars, uppercased).
   - Actions: **save** (`api/files/<id>?dl=1` with `download`, only for files when
     `it.download || info.admin`), **copy** (texts), **rename** (folders only), **move** (non-folders
     always; folders only if another folder exists or it isn't at the top), **keep**,
-    **lock** (admin only, not for texts), **delete**.
+    **lock** (admin only, not for texts), **delete**. Rename, move, keep and delete only when
+    `info.can_edit`.
   - Body: text -> `<pre>` with `linkify(esc(text))`. Playable media with an opener -> the
     "Play in <app>" banner link. Image -> lazy `<img>` inside a link to the inline URL. Video ->
     `<video controls preload="metadata" playsinline>`. Audio -> `<audio controls preload="none">`.
@@ -94,16 +101,17 @@ are **keyed by item id** and rebuilt only when their markup would change:
     `controlslist="nodownload" oncontextmenu="return false"` and images get `oncontextmenu`.
   - The name is set with `textContent` (no HTML injection). Everything interpolated into HTML
     goes through `esc()`.
-- `updateNode(el, it)` (lines 266-292) updates the dynamic bits in place: the `kept` border, the
+- `updateNode(el, it)` (lines 273-302) updates the dynamic bits in place: the `kept` border, the
   subtitle (folder: "N items · size · everything kept"; others: "size|text · age · goes in N d
   / kept / kept by its folder"), the amber **no downloads** badge (its tooltip names the
-  blocking folder via `blocked_by`), the keep button's text/state/tooltip, and the lock
-  button's state.
-- `kindOf(it)` (lines 190-197): `image` only for `png|jpeg|gif|webp|avif|bmp`. That's narrower
+  blocking folder via `blocked_by`), a **kept** badge when the item is pinned and there's no
+  keep button (read-only), the keep button's text/state/tooltip (if there is one), and the
+  lock button's state.
+- `kindOf(it)` (lines 194-201): `image` only for `png|jpeg|gif|webp|avif|bmp`. That's narrower
   than the server's `INLINE_TYPES`, which also has `heic|heif`, so HEIC shows as a plain file
   card. Then `video/*`, `audio/*`, else `file`.
 
-## Actions (one delegated click handler on `#items`, lines 348-374)
+## Actions (one delegated click handler on `#items`, lines 374-400)
 
 `call(url, opts)` shows `alert(detail || "Failed (<status>)")` on a non-2xx response.
 
@@ -116,11 +124,15 @@ are **keyed by item id** and rebuilt only when their markup would change:
 | move | opens the move dialog |
 | copy (texts) | `navigator.clipboard.writeText`. On failure (plain-HTTP origins often lack the async clipboard) it selects the `<pre>` text instead and shows "selected". |
 | + folder | `prompt()`, then `POST api/folders {name, parent: here}` |
+| "Let everyone add, move, keep and delete" (admin, footer) | `PUT api/settings {open}`; on failure the box flips back. Then `refresh()`. |
+
+Without `info.can_edit` the page shows none of the change buttons and `addFiles` does
+nothing, so a guest never sees the server's 403. The server checks anyway.
 
 Lock button states (`updateNode`): "downloads off" (the item itself), "off (folder)"
 (**disabled**, inherited, with a tooltip that names the folder), or "downloads on".
 
-## Move dialog (lines 382-407)
+## Move dialog (lines 408-433)
 
 - `openMove(it)` lists "On the box (top)" (`data-to="root"`) and every folder as a tree
   (depth-first, siblings sorted naturally, indented 16 px per level, with a folder emoji).
@@ -129,9 +141,10 @@ Lock button states (`updateNode`): "downloads off" (the item itself), "off (fold
   cycle guard. The depth limit isn't pre-checked: the server's 400 shows as an alert.
 - Picking a row closes the dialog and sends `PATCH api/items/<id> {parent: "<id>"|"root"}`.
 
-## Uploads queue (lines 422-478)
+## Uploads queue (lines 448-505)
 
-- `addFiles(list)` (from the file input or a drop event) creates a `.up` row per file and a job
+- `addFiles(list)` (from the file input or a drop event) returns at once when
+  `!info.can_edit` (a file dropped on a read-only page). Otherwise it creates a `.up` row per file and a job
   `{f, row, xhr, cancelled, parent: here}`. **The target folder is captured when queued**, so
   changing folders afterwards doesn't redirect it.
 - Client-side pre-check: `f.size > info.max_file` -> the row turns red ("too big") and is
@@ -151,7 +164,7 @@ Lock button states (`updateNode`): "downloads off" (the item itself), "off (fold
   nothing else is lost by leaving (the list lives on the box, the folder is in the hash). On
   "OK" it sets `leaving` so `beforeunload` doesn't ask a second time.
 
-## "Play in <app>" (lines 215-236)
+## "Play in <app>" (lines 219-240)
 
 1. At startup: `fetch("../api/apps")` (the platform's list of apps the admin hasn't hidden).
    It keeps entries with `opens.from === "drop"`, an array `opens.types`, and `opens.url`
@@ -176,9 +189,15 @@ the button.
 
 ## Admin UI
 
-- `info.admin` true: lock buttons on files and folders, **save** always shown, and a footer note
-  explaining downloads-off.
-- `info.admin_available` and not admin: the footer says "Admin? Sign in" -> `../admin/`.
-- Standalone (`admin_available` false): no admin UI at all.
+- `info.admin` true: lock buttons on files and folders, **save** always shown, all the change
+  buttons (the admin can always edit), and in the footer the `#openUp` checkbox "Let everyone
+  add, move, keep and delete" (`PUT api/settings`) plus a note explaining downloads-off.
+- `info.admin_available` and not admin: the footer says "Admin? Sign in to add things, or to
+  turn downloads off ..." -> `../admin/`. Unless the admin opened Drop up, the page is
+  read-only (see [Actions](#actions-one-delegated-click-handler-on-items-lines-374-400)).
+- `#foot` says "Anyone on this hotspot can see, add and delete what's here." when Drop is open
+  or standalone, otherwise "Anyone on this hotspot can see what's here; only the admin can add
+  or change things.", then the expiry.
+- Standalone (`admin_available` false): no admin UI at all, and everyone can edit.
 - The admin state is refreshed with every poll (the cookie is re-checked server-side, cached
   30 s), and a change triggers a full render.

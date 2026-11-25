@@ -7,9 +7,9 @@ Everything Drop holds is an **item**: a plain dict in `store.items`, persisted a
 
 | `kind` | Has a file on disk? | Created by | Extra fields |
 |---|---|---|---|
-| `"file"` | yes, `/data/files/<id>` | `PUT /api/files` (`app.py:440-441`) | none |
-| `"text"` | no (content inline) | `POST /api/texts` (`app.py:474-475`) | `text` |
-| `"folder"` | no | `POST /api/folders` (`app.py:496-497`) | none |
+| `"file"` | yes, `/data/files/<id>` | `PUT /api/files` (`app.py:479-480`) | none |
+| `"text"` | no (content inline) | `POST /api/texts` (`app.py:513-514`) | `text` |
+| `"folder"` | no | `POST /api/folders` (`app.py:535-536`) | none |
 
 ### Stored fields (what's in `items.json`)
 
@@ -26,7 +26,7 @@ Everything Drop holds is an **item**: a plain dict in `store.items`, persisted a
 | `parent` | str or null | x | x | x | Id of the containing folder, or `null` for the top ("On the box"). |
 | `text` | str | | x | | The snippet, stripped, max 64 KiB UTF-8. |
 
-### Derived fields (only in `GET /api/items` responses, `app.py:320-323`)
+### Derived fields (only in `GET /api/items` responses, `app.py:353-356`)
 
 | Field | Meaning |
 |---|---|
@@ -39,7 +39,7 @@ endpoints return the **stored** dict, without derived fields.
 
 ## `items.json` and atomic saves
 
-`Store.save()` (`app.py:158-162`):
+`Store.save()` (`app.py:178-182`):
 
 ```python
 tmp = META.with_suffix(".tmp")            # /data/items.tmp
@@ -64,7 +64,7 @@ upload is appended when it finishes). `GET /api/items` sorts by `-created` (newe
 page re-sorts per folder: folders first (by name, natural/numeric), then everything else in
 API order (newest first).
 
-## `Store` methods (`app.py:104-238`)
+## `Store` methods (`app.py:124-258`)
 
 | Method | What it does |
 |---|---|
@@ -85,16 +85,16 @@ API order (newest first).
 
 ### Depth arithmetic
 
-- Creating a folder: refused if `depth(parent) >= MAX_DEPTH` (`app.py:494`). The top has depth
+- Creating a folder: refused if `depth(parent) >= MAX_DEPTH` (`app.py:533`). The top has depth
   0, so the deepest folder has depth 8: `MAX_DEPTH` folders nested. The test creates
-  Movies + 7 more (depth 8), and a 9th is refused (`tests/test_drop.py:263-266`).
-- Moving folder `F` into `T` (`app.py:520-526`): `extra` = how far F's deepest subfolder is
+  Movies + 7 more (depth 8), and a 9th is refused (`tests/test_drop.py:277-280`).
+- Moving folder `F` into `T` (`app.py:557-566`): `extra` = how far F's deepest subfolder is
   below F (`max(depth(d) - depth(F))` over F's descendant folders, or 0). Refused if
   `depth(T) + 1 + extra > MAX_DEPTH`. Moving to the top (`target is None`) skips all checks.
 - Cycle guard: refuse if `T == F` or `T` is one of F's descendant folders.
 - Files and texts can be moved anywhere. Depth only limits folders.
 
-## `load()`: migration and cleanup (`app.py:111-156`)
+## `load()`: migration and cleanup (`app.py:131-176`)
 
 In order:
 
@@ -111,7 +111,7 @@ In order:
    parent. `pinned` isn't defaulted: it existed in 0.1.
    When recovering, every file in `files/` with a valid id that isn't in `known` comes back
    as a kept item: `name` `recovered-<first 6 id chars><ext>`, `type` sniffed from its first
-   bytes (`sniff`/`MAGIC`, `app.py:87-101`: mp4, webm, mp3, jpeg, png, gif, pdf, ogg; else
+   bytes (`sniff`/`MAGIC`, `app.py:107-120`: mp4, webm, mp3, jpeg, png, gif, pdf, ogg; else
    `application/octet-stream` with no extension), size and `created` from the file,
    `pinned: true`, `nodownload: false`, `parent: None`. These ids are added to `known`.
 7. Delete files in `files/` whose name isn't in `known` (files with no metadata). After a
@@ -127,7 +127,7 @@ The test `test_restart_keeps_items_and_cleans_up` covers steps 2, 5 and 7,
 `test_old_items_get_folder_fields` covers step 6, and
 `test_unreadable_metadata_never_deletes_files` covers recovery (corrupt and missing file).
 
-## Expiry: `sweep()` (`app.py:223-238`)
+## Expiry: `sweep()` (`app.py:243-258`)
 
 - `cutoff = now() - KEEP_DAYS * 86400`.
 - Removes every item where `kind != "folder"`, `created < cutoff` and `not kept(item)`.

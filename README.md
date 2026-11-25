@@ -2,9 +2,11 @@
 
 # Drop: pass files between every device on the hotspot
 
-An [AirplaneMode](https://github.com/jessewolcott/airplanemode) app. Anyone on your
-AirplaneMode hotspot can drop files and notes on the box, and every other phone, tablet and
-laptop sees them a few seconds later, whatever the operating system. Nothing leaves the box.
+An [AirplaneMode](https://github.com/jessewolcott/airplanemode) app. Drop files and notes on
+the box, and every other phone, tablet and laptop on your AirplaneMode hotspot sees them a few
+seconds later, whatever the operating system. Nothing leaves the box. On the box, only the
+admin adds and changes things unless the admin lets everyone do it (see
+[Who can do what](#who-can-do-what)).
 
 <p align="center">
   <img src="docs/screenshots/drop.png" width="230" alt="Drop: send files and notes, folders on the box">
@@ -55,7 +57,8 @@ Use another port with `PORT=9000`.
 | `DROP_KEEP_DAYS` | `7` | days before an item is deleted, unless someone tapped **keep** |
 | `ADMIN_URL` | *(empty)* | the platform's admin service (`http://admin:8000` on the box), to recognise the admin. Empty: nobody is admin |
 
-Files and `items.json` live in one volume at `/data`. Free space shown in the page is the
+Files, `items.json` and `settings.json` (the admin's "let everyone change Drop" switch) live
+in one volume at `/data`. Free space shown in the page is the
 smaller of what's left of `DROP_MAX_BYTES` and the disk's free space minus 64 MB.
 
 ## How it's built
@@ -79,14 +82,19 @@ smaller of what's left of `DROP_MAX_BYTES` and the disk's free space minus 64 MB
 
 ## Who can do what
 
-There's no login. **Anyone on the hotspot can see, keep, move and delete everything**, and
-download anything the admin hasn't turned downloads off for, so the hotspot password is the
-access control.
+There's no Drop login. **Anyone on the hotspot can see and play everything**, and download
+anything the admin hasn't turned downloads off for, so the hotspot password is the access
+control for that.
+
+**On the box, Drop is read-only for everyone but the admin.** Only the admin can add files,
+notes and folders, rename, move, keep and delete. The admin can tick **Let everyone add, move,
+keep and delete** at the bottom of the page to open it up for everyone (and untick it again).
+Run on its own (no admin service), there's no admin, so everyone can change everything.
 
 **The admin** is whoever is signed in to the AirplaneMode admin panel. Drop is served from the
 same address, so the browser sends it the panel's session cookie; Drop asks the admin service
 (`GET /api/admin/session`) whether it's valid and remembers the answer for 30 seconds. Only the
-admin can turn downloads on or off. "Downloads off" refuses `?dl=1` and attachment-only types
+admin can turn downloads on or off, even when Drop is open to everyone. "Downloads off" refuses `?dl=1` and attachment-only types
 for everyone else, while streaming (with seeking) keep working, so films still play. It stops
 casual copies filling up phones; it can't stop someone recording what's playing. Changes need an `X-Drop: 1` header, which
 other websites can't send without a CORS preflight that Drop never allows, so a web page

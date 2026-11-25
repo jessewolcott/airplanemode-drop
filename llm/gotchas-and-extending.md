@@ -6,8 +6,8 @@
 
 - **A corrupt or missing `items.json` doesn't delete files, but loses their metadata.**
   `load()` keeps the bad file as `items.json.bad-<time>` and brings every stored file back as
-  a pinned `recovered-...` item at the top (`app.py:116-145`). Names, folders and settings are
-  gone. Validate the JSON before hand-editing it on a live box.
+  a pinned `recovered-...` item at the top (`app.py:136-164`). Names, folders, keep and
+  downloads-off are gone (the open-up switch is in `settings.json` and stays). Validate the JSON before hand-editing it on a live box.
 - **Unpinning, or moving something out of a pinned folder, can delete it within seconds.**
   `created` never changes, so anything older than `KEEP_DAYS` goes on the next
   `GET /api/items` (the page polls every 4 s).
@@ -37,7 +37,16 @@
 
 - `parent: null` in `PATCH` means "don't move". Moving to the top needs `"root"` (or `""`).
 - A file whose target folder is deleted mid-upload lands at the top silently.
-- `PATCH` with `nodownload` from a non-admin returns 403 **before** the 404 check.
+- `PATCH` with `nodownload` from a non-admin returns 403 **before** the 404 check. So does
+  every change from a non-editor while Drop is read-only (`need_editor` runs first).
+- **On the box Drop is read-only for everyone but the admin by default** (platform decision
+  0026). A fresh box, a lost `settings.json` or an unreadable one all mean closed. Standalone
+  (no `ADMIN_URL`) it's open. Tests that aren't about this rule and use an admin
+  (`ADMIN_URL` set) must set `drop.settings["open"] = True` and reset it after.
+- `settings.json` is read once at start. Editing it by hand on a live box needs a restart;
+  use the admin's switch (`PUT /api/settings`) instead.
+- If the admin service is down, nobody is admin, so a read-only Drop can't be changed by
+  anyone until it's back.
 - 422 validation errors have a **list** `detail`, so the page's `alert(detail)` would show
   `[object Object]`. The page only sends well-formed bodies, so this rarely shows.
 - Multi-range requests get the whole file with 200 (allowed by the RFC). A malformed single
@@ -66,7 +75,7 @@
 - The page must keep **relative URLs** (`test_page_uses_relative_urls`). Even `href="/..."` fails
   the test.
 - Anything that changes an item card's static markup must be part of `sig()`, or the card
-  won't rebuild. Anything that changes often (ages, keep state, badges) belongs in `updateNode()`,
+  won't rebuild (`info.can_edit` is, since it adds or removes the edit buttons). Anything that changes often (ages, keep state, badges) belongs in `updateNode()`,
   or every poll would rebuild cards and interrupt playing videos.
 - The textarea limit counts characters while the server counts UTF-8 bytes.
 - The clipboard API is often unavailable on plain-HTTP origins. The page falls back to selecting
@@ -76,28 +85,32 @@
 
 ### Add a stored item field
 
-1. Add it to all three constructors: upload (`app.py:440-441`), text (`433-434`), folder (`455-456`).
+1. Add it to all three constructors: upload (`app.py:479-480`), text (`513-514`), folder (`535-536`).
 2. Migrate old data in `load()` with `i.setdefault("field", default)` (next to `nodownload`,
-   `app.py:147-150`).
-3. If clients can change it, add it to `Change` (`app.py:503-506`) and handle it in `change()`.
+   `app.py:165-170`).
+3. If clients can change it, add it to `Change` (`app.py:542-545`) and handle it in `change()`.
    Decide whether it's admin-only (check `is_admin` before taking the lock, like `nodownload`).
 4. If it should inherit down folders, write a helper like `kept()`/`blocked()` over `chain()`,
-   and expose a derived field in `items()` (`app.py:320-323`), computing `ids = store.by_id()`
+   and expose a derived field in `items()` (`app.py:353-356`), computing `ids = store.by_id()`
    once.
 5. Add a test (and a 0.1-style/old-data case if you migrate). Additions are safe for Cinema and
    QuickShot. Don't rename or retype the fields they use (see [integration.md](integration.md#compatibility-rules-what-not-to-break)).
 
 ### Add an endpoint that changes things
 
-- Call `need_header(request)` first.
+- Call `await need_editor(request)` first (`X-Drop` header + the read-only rule). Use
+  `need_header` plus your own `is_admin` check only for admin-only switches, like
+  `PUT /api/settings`. Never `need_header` alone: that would let guests change a read-only Drop.
 - Validate ids with `store.get()` and folder ids with `store.folder()`. Never build paths from input.
 - Mutate inside `async with store.lock:` and finish with `store.save()`.
 - Raise `HTTPException(code, "Human sentence.")`. The page shows `detail` to the user verbatim.
-- Add a header-missing case to the tests.
+- Add a header-missing case to the tests, and a non-admin 403 case to
+  `test_read_only_for_everyone_but_the_admin`.
+- Hide its button in the page when `!info.can_edit`.
 
 ### Serve another type inline
 
-- Add it to `INLINE_TYPES` (`app.py:77`) **only if browsers can't execute it as a document**
+- Add it to `INLINE_TYPES` (`app.py:97-98`) **only if browsers can't execute it as a document**
   (never HTML, SVG, XML, XHTML or PDF). Keep `nosniff` and the sandbox CSP.
 - Update `kindOf()` in the page if it should get a preview, and extend
   `test_dangerous_types_download_as_attachments` or `test_round_trip`.
@@ -112,7 +125,7 @@ streams from `../drop/api/files/<id>` and should honour `download`.
 
 ### Change limits or defaults
 
-- Env defaults live in `app.py:57-60`, and are mirrored in `compose.yaml`, `app.yaml`,
+- Env defaults live in `app.py:62-65`, and are mirrored in `compose.yaml`, `app.yaml`,
   `README.md`, the platform `compose.yaml` and `hardware/*.env`. Keep them in sync.
 - `MAX_DEPTH` is mirrored only in the test that builds a deep chain (`drop.MAX_DEPTH`) and in the
   error text.

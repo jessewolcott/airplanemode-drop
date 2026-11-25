@@ -13,7 +13,9 @@ python tests/test_drop.py        # needs fastapi, uvicorn (requirements.txt) + h
 sweeper task), and calls every `test_*` function in definition order, printing `ok  <name>`.
 The client `c` is a module global defined only under `__main__`, so pytest can't collect these
 as written. Most tests start with `reset()`, which deletes every item through the API and
-asserts the store is empty. The app needs Python 3.10+ (`str | None` annotations). The
+asserts the store is empty. Most tests run standalone (`ADMIN_URL` empty), where everyone may
+change Drop. A test that sets `ADMIN_URL` gets a read-only Drop for non-admins unless it sets
+`drop.settings["open"] = True` (and resets it in `finally`). The app needs Python 3.10+ (`str | None` annotations). The
 containers use 3.12.
 
 Helpers: `ok(r, code=200)` asserts the status and returns the JSON. `put(name, data, headers=H)`
@@ -41,8 +43,9 @@ uploads. `folder(name, parent)` and `patch(iid, **body)`.
 | `test_unreadable_metadata_never_deletes_files` | Corrupt `items.json` -> kept as one `items.json.bad-*`, both files survive as pinned recovered items (mp4 sniffed as `video/mp4` with `.mp4`, the other `application/octet-stream`), a fresh `items.json` is written; a missing `items.json` recovers the same way |
 | `test_folders_move_and_delete` | Nested folders, upload/text into folders, parent = file -> 400, unknown -> 404 (before reading the body), move to root and back plus rename, cycle guards, depth limit (8), recursive delete count |
 | `test_keep_on_a_folder_keeps_whats_inside` | Pinned folder keeps a child 30 days old (`kept` true, `pinned` false). The folder itself never expires. An outside item expires |
-| `test_downloads_off_admin_only_and_inherited` | Fakes `ADMIN_URL` + `check_admin_token`. Non-admin, wrong token and malformed cookie can't set `nodownload`. The admin sets it on a folder -> child `download:false`, `blocked_by`. A non-admin can stream with Range, gets 403 on `?dl=1` and on an attachment-only `.zip`. Moving out unblocks it. The admin can still `?dl=1`. Turning it back on. Admin answers cached (one call for 3 listings) |
-| `test_doom_wads_stream_to_the_doom_app` | `.WAD` upload gets `application/x-doom-wad`; Range read returns `PWAD` inline with the sandbox CSP; with downloads off a non-admin can still GET it, `?dl=1` is 403 |
+| `test_downloads_off_admin_only_and_inherited` | Fakes `ADMIN_URL` + `check_admin_token`, and sets `drop.settings["open"] = True` (it's about downloads off, not who may edit; reset in `finally`). Non-admin, wrong token and malformed cookie can't set `nodownload`. The admin sets it on a folder -> child `download:false`, `blocked_by`. A non-admin can stream with Range, gets 403 on `?dl=1` and on an attachment-only `.zip`. Moving out unblocks it. The admin can still `?dl=1`. Turning it back on. Admin answers cached (one call for 3 listings) |
+| `test_doom_wads_stream_to_the_doom_app` | Opens Drop up like the test above. `.WAD` upload gets `application/x-doom-wad`; Range read returns `PWAD` inline with the sandbox CSP; with downloads off a non-admin can still GET it, `?dl=1` is 403 |
+| `test_read_only_for_everyone_but_the_admin` | Fakes the admin service. The admin gets `can_edit` and adds a folder, file and text. A non-admin gets `can_edit: false` and 403 "Only the admin can add or change things" on upload, text, folder, rename, move, keep and delete (nothing changes), but can still Range-read and `?dl=1`. `PUT /api/settings`: 403 for a non-admin and without `X-Drop`; the admin's `{"open": true}` bumps `version` and is saved to `settings.json`; then a non-admin can keep and delete; closing it again brings the 403 back |
 | `test_standalone_has_no_admin` | `ADMIN_URL` empty: `admin_available` false, and setting `nodownload` is 403 even with a cookie |
 | `test_old_items_get_folder_fields` | 0.1-style data (no `nodownload`, a dangling `parent`) -> `load()` sets `parent: None`, `nodownload: False` |
 

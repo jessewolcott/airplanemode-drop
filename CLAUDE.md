@@ -27,8 +27,15 @@ Inside the platform stack it's served at `/drop/` with the prefix stripped.
   uploaded HTML/SVG file must never render as a page. `.wad` files get
   `application/x-doom-wad` (a type browsers won't render) and count as inline so the Doom app
   (`../airplanemode-doom`) can still stream them when downloads are off.
-- Changes need the `X-Drop: 1` header (blocks cross-site requests). There's no login by
-  design: the hotspot password is the access control.
+- Changes need the `X-Drop: 1` header (blocks cross-site requests). There's no Drop login by
+  design: the hotspot password is the access control for looking, playing and saving.
+- **Read-only for everyone but the admin, on the box** (platform decision 0026). Every write
+  endpoint calls `await need_editor(request)` (header + `can_edit`), never `need_header`
+  alone. The admin can let everyone change Drop (`PUT api/settings {open}`, saved in
+  `/data/settings.json`; missing or unreadable = closed). Standalone (`ADMIN_URL` empty)
+  everyone can edit. `GET api/items` returns `can_edit` and `open`; the page hides the edit
+  controls from `can_edit`. Tests that use an admin but aren't about this set
+  `drop.settings["open"] = True`.
 - **Admin = the platform admin panel's session.** `is_admin()` forwards the `am_admin` cookie
   (only if it matches `TOKEN_RE`) to `ADMIN_URL/api/admin/session`, cached 30 s. Standalone
   (`ADMIN_URL` empty) nobody is admin. Only the admin may change `nodownload`.
@@ -40,7 +47,8 @@ Inside the platform stack it's served at `/drop/` with the prefix stripped.
   still play. It refuses `?dl=1` and attachment-only types for non-admins.
 - "Play in …" comes from the platform's `GET /api/apps` (apps the admin hasn't hidden) entries
   with `opens.from == "drop"`. Cinema (`../airplanemode-cinema`) reads `api/items`, so keep
-  its fields (`kind`, `parent`, `type`, `download`) stable.
+  its fields (`kind`, `parent`, `type`, `download`) stable. QuickShot creates its folder
+  through `POST api/folders`, forwarding the person's `am_admin` cookie.
 - `items.json` is written atomically (temp file + rename) under `store.lock`.
 
 ## Releasing
