@@ -29,6 +29,7 @@ uploads. `folder(name, parent)` and `patch(iid, **body)`.
 | `test_round_trip` | Upload 300 KB jpg -> name/size/type, GET returns the bytes, `accept-ranges`, inline `image/jpeg`; `?dl=1` -> attachment; listing, `used`, `free == cap - size`; `tmp/` is empty |
 | `test_dangerous_types_download_as_attachments` | `.html`, `.svg`, `.js` -> `application/octet-stream`, attachment, nosniff, sandbox CSP |
 | `test_range` | `bytes=100-199`, `0-1` (iOS), open-ended `102000-`, suffix `-10`, clamped end, unsatisfiable start -> 416 + `bytes */N`, HEAD length and empty body |
+| `test_accel_redirect` | With `X-Sendfile-Type: X-Accel-Redirect`: 200, empty body, `X-Accel-Redirect: /files/<id>`, the stored type, inline disposition and CSP. HEAD still answered by Drop; no header (other apps calling directly) = no redirect; unknown id 404 |
 | `test_per_file_cap` | 601 KB with Content-Length -> 413 "limit per file", nothing stored |
 | `test_total_cap` | 500 K + 400 K stored, 200 K more -> 413 "Not enough space" |
 | `test_streaming_cap_without_length` | Chunked (generator) bodies: 700 K -> 413 (per file), nothing left in tmp, `reserved == {}`; with 500 K stored, 576 K chunked -> 413 "space"; 128 K chunked -> OK |

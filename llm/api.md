@@ -132,6 +132,15 @@ Query: `dl` (bool, default false). `?dl=1` asks for a download (attachment).
    - `Content-Security-Policy: sandbox; default-src 'none'; img-src 'self'; media-src 'self'`
    - `Cache-Control: private, max-age=3600`
    - `Content-Type`: the stored type when inline, otherwise `application/octet-stream`.
+5a. **Behind the platform's Caddy** (`app.py:374-377`, platform decision 0024): a `GET` with the
+   request header `X-Sendfile-Type: X-Accel-Redirect` (Caddy adds it) gets **200**, no body,
+   the headers above plus `X-Accel-Redirect: /files/<id>`. Caddy then serves
+   `/srv/drop/files/<id>` itself (the `drop-data` volume, read-only in the proxy) with its own
+   Range, ETag and sendfile, copying Content-Type, Content-Disposition, CSP, nosniff and
+   Cache-Control. Steps 6-8 then don't run. HEAD, direct calls from other apps (Cinema,
+   QuickShot) and Drop on its own (no such header) still use them. The access checks above
+   always run first, so **any new access rule must go before this step**. Tested in
+   `test_accel_redirect`.
 6. Range (`parse_range()`, `app.py:335-350`). Only a single `bytes=` range:
    - No header -> whole file, **200**.
    - `bytes=a-b` -> `[a, min(b, size-1)]` (an end past EOF is clamped).

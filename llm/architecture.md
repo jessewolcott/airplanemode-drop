@@ -98,7 +98,7 @@ Text snippets and folders have no file on disk. A text's content is stored inlin
   time it reaches `CHUNK` (1 MiB) (`app.py:420-436`). Peak extra memory is about 1 MiB plus
   one incoming chunk. The README says a 700 MB upload peaks around 36 MB RSS for the whole
   process.
-- Downloads: an async generator reads `min(256 KiB, remaining)` at a time (`app.py:386-395`).
+- Downloads: an async generator reads `min(256 KiB, remaining)` at a time (`app.py:390-399`). Behind the platform's Caddy, Caddy sends the bytes instead (`X-Accel-Redirect`, see [api.md](api.md); platform decision 0024).
 - Metadata: the whole item list is in memory and re-serialised on every save. That's fine for
   hundreds or thousands of items. Text items can each carry up to 64 KiB inline, so many large
   texts make `items.json` and every save bigger.

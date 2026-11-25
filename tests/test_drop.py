@@ -103,6 +103,20 @@ def test_range():
     assert r.status_code == 200 and r.headers["content-length"] == str(len(data)) and r.content == b""
 
 
+def test_accel_redirect():
+    """Behind the platform's Caddy, Drop names the file and Caddy sends the bytes."""
+    reset()
+    iid = ok(put("clip.mp4", b"v" * 1000))["id"]
+    A = {"X-Sendfile-Type": "X-Accel-Redirect"}
+    r = c.get(f"/api/files/{iid}", headers={**A, "Range": "bytes=0-1"})
+    assert r.status_code == 200 and r.content == b"", r.status_code
+    assert r.headers["x-accel-redirect"] == f"/files/{iid}" and r.headers["content-type"] == "video/mp4"
+    assert r.headers["content-disposition"].startswith("inline") and "sandbox" in r.headers["content-security-policy"]
+    assert c.head(f"/api/files/{iid}", headers=A).headers["content-length"] == "1000"   # HEAD: Drop answers
+    assert "x-accel-redirect" not in c.get(f"/api/files/{iid}").headers               # apps calling Drop directly
+    assert c.get("/api/files/0123456789abcdef", headers=A).status_code == 404
+
+
 def test_per_file_cap():
     reset()
     r = put("big.bin", b"x" * (601 * K))

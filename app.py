@@ -371,6 +371,10 @@ async def download(iid: str, request: Request, dl: bool = False):
     }
     if not inline:
         ctype = "application/octet-stream"
+    if request.method == "GET" and request.headers.get("x-sendfile-type") == "X-Accel-Redirect":
+        # Behind the platform's Caddy: the access checks are done, so Caddy sends the bytes
+        # itself from the read-only volume (ranges, sendfile), not this Python process.
+        return Response(headers={**headers, "X-Accel-Redirect": f"/files/{iid}"}, media_type=ctype)
     rng = parse_range(request.headers.get("range"), size)
     if rng == "bad":
         return Response(status_code=416, headers={"Content-Range": f"bytes */{size}", **headers})

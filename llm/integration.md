@@ -7,7 +7,7 @@ three edits in the platform repo. For Drop:
 
 | Platform file | Drop's entry |
 |---|---|
-| `compose.yaml` | service `drop`, `image: ghcr.io/jessewolcott/airplanemode-drop:0.2.2` (pinned, never `latest`), env `DROP_MAX_BYTES/DROP_MAX_FILE/DROP_KEEP_DAYS` (defaults 4g/2g/7), `ADMIN_URL: http://admin:8000`, volume `drop-data:/data`, `mem_limit: ${DROP_MEM:-128m}`, `restart: unless-stopped`. No published port. |
+| `compose.yaml` | service `drop`, `image: ghcr.io/jessewolcott/airplanemode-drop:0.2.2` (pinned, never `latest`), env `DROP_MAX_BYTES/DROP_MAX_FILE/DROP_KEEP_DAYS` (defaults 4g/2g/7), `ADMIN_URL: http://admin:8000`, volume `drop-data:/data`, `mem_limit: ${DROP_MEM:-128m}`, `restart: unless-stopped`. No published port. The `proxy` service also mounts `drop-data:/srv/drop:ro` to send file bytes itself (decision 0024). |
 | `Caddyfile` | `redir /drop /drop/` and `handle_path /drop/* { reverse_proxy drop:8000 }`. `handle_path` strips `/drop`, so the app sees `/`. |
 | `portal/apps.json` | `{"id": "drop", "name": "Drop", "path": "/drop/", "monogram": "Dp", "color": "#5fb8c9", "category": "Tools", "uses_llm": false}` |
 | `hardware/*.env` | `nanopi-r6s.env`: `DROP_MEM=128m`, `DROP_MAX_BYTES=4g`, `DROP_MAX_FILE=2g`. `glinet.env`: `DROP_MEM=128m`, `DROP_MAX_BYTES=1g`, `DROP_MAX_FILE=512m`. |
